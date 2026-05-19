@@ -1,0 +1,12 @@
+.git
+.codex
+.agents
+docs
+.env
+*.db
+*.sqlite
+*.sqlite-*
+*.test
+*.out
+coverage.*
+profile.cov

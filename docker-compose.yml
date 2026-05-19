@@ -1,0 +1,18 @@
+services:
+  bot:
+    build:
+      context: .
+    image: photochallengebot:local
+    restart: unless-stopped
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      MAIN_CHAT_ID: ${MAIN_CHAT_ID:-}
+      ADMIN_CHAT_ID: ${ADMIN_CHAT_ID:-}
+      DATABASE_PATH: ${DATABASE_PATH:-/data/photochallengebot.sqlite}
+      TEMPLATES_DIR: ${TEMPLATES_DIR:-/app/templates}
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      - photochallengebot-sqlite:/data
+
+volumes:
+  photochallengebot-sqlite:
