@@ -3,13 +3,14 @@ package logger
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
-	"maps"
+	"math"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
-	"time"
 )
 
 type CompactJSONHandler struct {
@@ -32,9 +33,10 @@ func NewCompactJSONHandler(w io.Writer, opts *slog.HandlerOptions) *CompactJSONH
 	if opts == nil {
 		opts = &slog.HandlerOptions{}
 	}
+	optsCopy := *opts
 	return &CompactJSONHandler{
 		writer: w,
-		opts:   opts,
+		opts:   &optsCopy,
 		attrs:  make([]scopedAttr, 0),
 		groups: make([]string, 0),
 		mu:     &sync.Mutex{},
@@ -50,21 +52,22 @@ func (h *CompactJSONHandler) Enabled(ctx context.Context, level slog.Level) bool
 }
 
 func (h *CompactJSONHandler) Handle(ctx context.Context, r slog.Record) error {
-	entry := map[string]any{
-		"@t":  r.Time.UTC().Format(time.RFC3339Nano),
-		"@mt": r.Message,
+	entry := make(map[string]any)
+	if !r.Time.IsZero() {
+		h.addAttr(entry, nil, slog.Time("@t", r.Time.UTC()))
 	}
+	h.addAttr(entry, nil, slog.String("@mt", r.Message))
 	if h.opts.AddSource && r.PC != 0 {
 		frame, _ := runtime.CallersFrames([]uintptr{r.PC}).Next()
-		entry["source"] = map[string]any{
-			"function": frame.Function,
-			"file":     frame.File,
-			"line":     frame.Line,
-		}
+		h.addAttr(entry, nil, slog.Any(slog.SourceKey, &slog.Source{
+			Function: frame.Function,
+			File:     frame.File,
+			Line:     frame.Line,
+		}))
 	}
 
 	if level := compactLevel(r.Level); level != "" {
-		entry["@l"] = level
+		h.addAttr(entry, nil, slog.String("@l", level))
 	}
 
 	for _, attr := range h.attrs {
@@ -123,6 +126,29 @@ func (h *CompactJSONHandler) WithGroup(name string) slog.Handler {
 }
 
 func (h *CompactJSONHandler) addAttr(entry map[string]any, groups []string, attr slog.Attr) {
+	if len(groups) == 0 {
+		h.addAttrToMap(entry, groups, attr)
+		return
+	}
+	staged := make(map[string]any)
+	h.addAttrToMap(staged, groups, attr)
+	if len(staged) == 0 {
+		return
+	}
+
+	current := entry
+	for _, group := range groups {
+		child, ok := current[group].(map[string]any)
+		if !ok {
+			child = make(map[string]any)
+			current[group] = child
+		}
+		current = child
+	}
+	mergeEntryMap(current, staged)
+}
+
+func (h *CompactJSONHandler) addAttrToMap(entry map[string]any, groups []string, attr slog.Attr) {
 	attr.Value = attr.Value.Resolve()
 	if attr.Equal(slog.Attr{}) {
 		return
@@ -135,28 +161,38 @@ func (h *CompactJSONHandler) addAttr(entry map[string]any, groups []string, attr
 		}
 	}
 
-	current := entry
-	for _, group := range groups {
-		child, ok := current[group].(map[string]any)
-		if !ok {
-			child = make(map[string]any)
-			current[group] = child
-		}
-		current = child
-	}
 	if attr.Value.Kind() == slog.KindGroup {
-		groupValues := groupValueToMap(attr.Value)
-		if len(groupValues) == 0 {
-			return
-		}
-		if existing, ok := current[attr.Key].(map[string]any); ok {
-			maps.Copy(existing, groupValues)
-			return
-		}
-		current[attr.Key] = groupValues
+		h.addGroupAttr(entry, groups, attr)
 		return
 	}
-	current[attr.Key] = attrValueToAny(attr.Value)
+	entry[attr.Key] = attrValueToAny(attr.Value)
+}
+
+func (h *CompactJSONHandler) addGroupAttr(entry map[string]any, groups []string, attr slog.Attr) {
+	groupAttrs := attr.Value.Group()
+	if len(groupAttrs) == 0 {
+		return
+	}
+	if attr.Key == "" {
+		for _, groupAttr := range groupAttrs {
+			h.addAttrToMap(entry, groups, groupAttr)
+		}
+		return
+	}
+
+	child := make(map[string]any)
+	childGroups := append(append([]string{}, groups...), attr.Key)
+	for _, groupAttr := range groupAttrs {
+		h.addAttrToMap(child, childGroups, groupAttr)
+	}
+	if len(child) == 0 {
+		return
+	}
+	if existing, ok := entry[attr.Key].(map[string]any); ok {
+		mergeEntryMap(existing, child)
+		return
+	}
+	entry[attr.Key] = child
 }
 
 func compactLevel(level slog.Level) string {
@@ -176,32 +212,76 @@ func compactLevel(level slog.Level) string {
 	}
 }
 
-func groupValueToMap(value slog.Value) map[string]any {
-	result := make(map[string]any)
-	for _, attr := range value.Group() {
-		attr.Value = attr.Value.Resolve()
-		if attr.Equal(slog.Attr{}) {
-			continue
-		}
-		if attr.Value.Kind() == slog.KindGroup {
-			nested := groupValueToMap(attr.Value)
-			if len(nested) > 0 {
-				result[attr.Key] = nested
-			}
-			continue
-		}
-		result[attr.Key] = attrValueToAny(attr.Value)
-	}
-	return result
-}
-
 func attrValueToAny(value slog.Value) any {
 	value = value.Resolve()
-	if err, ok := value.Any().(error); ok {
+	switch value.Kind() {
+	case slog.KindBool:
+		return value.Bool()
+	case slog.KindDuration:
+		return value.Duration()
+	case slog.KindFloat64:
+		floatValue := value.Float64()
+		if math.IsNaN(floatValue) || math.IsInf(floatValue, 0) {
+			return fmt.Sprint(floatValue)
+		}
+		return floatValue
+	case slog.KindInt64:
+		return value.Int64()
+	case slog.KindString:
+		return value.String()
+	case slog.KindTime:
+		return value.Time()
+	case slog.KindUint64:
+		return value.Uint64()
+	}
+
+	return jsonSafeAny(value.Any())
+}
+
+func jsonSafeAny(value any) any {
+	if isTypedNil(value) {
+		return nil
+	}
+	if err, ok := value.(error); ok {
 		return err.Error()
 	}
-	if value.Kind() == slog.KindGroup {
-		return groupValueToMap(value)
+	if source, ok := value.(*slog.Source); ok {
+		return map[string]any{
+			"function": source.Function,
+			"file":     source.File,
+			"line":     source.Line,
+		}
 	}
-	return value.Any()
+	if value == nil {
+		return nil
+	}
+	if jsonData, err := json.Marshal(value); err == nil {
+		return json.RawMessage(jsonData)
+	}
+	return fmt.Sprint(value)
+}
+
+func mergeEntryMap(dst map[string]any, src map[string]any) {
+	for key, value := range src {
+		if existing, ok := dst[key].(map[string]any); ok {
+			if nested, ok := value.(map[string]any); ok {
+				mergeEntryMap(existing, nested)
+				continue
+			}
+		}
+		dst[key] = value
+	}
+}
+
+func isTypedNil(value any) bool {
+	if value == nil {
+		return false
+	}
+	reflectValue := reflect.ValueOf(value)
+	switch reflectValue.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return reflectValue.IsNil()
+	default:
+		return false
+	}
 }
