@@ -22,7 +22,7 @@ func TestCreateChallengeFlowPublishesAndPinsDefaultAnnouncement(t *testing.T) {
 	database := openAdminTestDB(t)
 	defer database.Close()
 	location := mustAdminLocation(t)
-	publisher := &recordingPublisher{nextMessageID: 100}
+	publisher := newCreateChallengePublisherDeps(100)
 	handler := newAdminTestHandler(t, database, location, publisher)
 
 	for _, text := range []string{"/challenge", "Ночной город", "#night", "ОК", "ОК"} {
@@ -89,7 +89,7 @@ func TestNewCreateChallengeHandlerPanicsOnNilBotUsername(t *testing.T) {
 		Challenges:    challenge.NewService(challengeRepo, location, time.Now),
 		Announcements: challengeRepo,
 		Renderer:      renderer,
-		Publisher:     &recordingPublisher{},
+		Publisher:     newCreateChallengePublisherDeps(0).mock,
 	})
 }
 
@@ -98,7 +98,7 @@ func TestCreateChallengeFlowUsesCustomApprovedText(t *testing.T) {
 
 	database := openAdminTestDB(t)
 	defer database.Close()
-	publisher := &recordingPublisher{nextMessageID: 200}
+	publisher := newCreateChallengePublisherDeps(200)
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
 	for _, text := range []string{"/new", "Вода", "#water", "2026-06-01 2026-06-18", "Кастомный анонс #water"} {
@@ -130,7 +130,7 @@ func TestCreateChallengeFlowRejectsBadDatesWithoutAdvancing(t *testing.T) {
 
 	database := openAdminTestDB(t)
 	defer database.Close()
-	publisher := &recordingPublisher{nextMessageID: 300}
+	publisher := newCreateChallengePublisherDeps(300)
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
 	for _, text := range []string{"/challenge", "Еда", "#food", "not-a-date"} {
@@ -158,7 +158,7 @@ func TestCreateChallengeFlowReportsSemanticDateErrors(t *testing.T) {
 
 	database := openAdminTestDB(t)
 	defer database.Close()
-	publisher := &recordingPublisher{nextMessageID: 325}
+	publisher := newCreateChallengePublisherDeps(325)
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
 	for _, text := range []string{"/challenge", "Еда", "#food", "2026-06-18 2026-06-01"} {
@@ -185,7 +185,7 @@ func TestCreateChallengeFlowIgnoresEmptyAdminMessages(t *testing.T) {
 
 	database := openAdminTestDB(t)
 	defer database.Close()
-	publisher := &recordingPublisher{nextMessageID: 350}
+	publisher := newCreateChallengePublisherDeps(350)
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
 	for _, text := range []string{"/challenge", "Еда", "#food"} {
@@ -214,7 +214,7 @@ func TestCreateChallengeFlowIgnoresOtherBotMentionInsideSession(t *testing.T) {
 
 	database := openAdminTestDB(t)
 	defer database.Close()
-	publisher := &recordingPublisher{nextMessageID: 375}
+	publisher := newCreateChallengePublisherDeps(375)
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
 	if err := handler.HandleAdminChatMessage(context.Background(), adminMessage("/challenge")); err != nil {
@@ -241,12 +241,8 @@ func TestCreateChallengeFlowRecoversAfterPublishFailure(t *testing.T) {
 
 	database := openAdminTestDB(t)
 	defer database.Close()
-	publisher := &recordingPublisher{
-		nextMessageID: 400,
-		failSendForChat: map[int64]error{
-			-1001: errors.New("telegram unavailable"),
-		},
-	}
+	publisher := newCreateChallengePublisherDeps(400)
+	publisher.failSendForChat[-1001] = errors.New("telegram unavailable")
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
 	for _, text := range []string{"/challenge", "Ночь", "#night", "ОК"} {
@@ -291,12 +287,8 @@ func TestCreateChallengeFlowRecoversCustomTextAfterPublishFailure(t *testing.T) 
 
 	database := openAdminTestDB(t)
 	defer database.Close()
-	publisher := &recordingPublisher{
-		nextMessageID: 450,
-		failSendForChat: map[int64]error{
-			-1001: errors.New("telegram unavailable"),
-		},
-	}
+	publisher := newCreateChallengePublisherDeps(450)
+	publisher.failSendForChat[-1001] = errors.New("telegram unavailable")
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
 	for _, text := range []string{"/challenge", "Ночь", "#night", "ОК"} {
@@ -327,10 +319,8 @@ func TestCreateChallengeFlowRecoversAfterPinFailure(t *testing.T) {
 
 	database := openAdminTestDB(t)
 	defer database.Close()
-	publisher := &recordingPublisher{
-		nextMessageID: 500,
-		failPin:       errors.New("pin failed"),
-	}
+	publisher := newCreateChallengePublisherDeps(500)
+	publisher.failPin = errors.New("pin failed")
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
 	for _, text := range []string{"/challenge", "Ночь", "#night", "ОК"} {
@@ -360,10 +350,19 @@ func TestCreateChallengeFlowRecoversAfterAnnouncementMessageIDPersistFailure(t *
 
 	database := openAdminTestDB(t)
 	defer database.Close()
-	publisher := &recordingPublisher{nextMessageID: 550}
-	announcements := &failingAnnouncementStore{
-		inner:       repository.NewChallenges(database),
-		failSetOnce: errors.New("persist announcement id failed"),
+	publisher := newCreateChallengePublisherDeps(550)
+	challengeRepo := repository.NewChallenges(database)
+	failSetOnce := errors.New("persist announcement id failed")
+	announcements := &MoqChallengeAnnouncements{
+		GetFunc: challengeRepo.Get,
+		SetAnnouncementMessageIDFunc: func(ctx context.Context, id int64, messageID int, updatedAt time.Time) error {
+			if failSetOnce != nil {
+				err := failSetOnce
+				failSetOnce = nil
+				return err
+			}
+			return challengeRepo.SetAnnouncementMessageID(ctx, id, messageID, updatedAt)
+		},
 	}
 	handler := newAdminTestHandlerWithAnnouncements(t, database, mustAdminLocation(t), publisher, announcements)
 
@@ -401,12 +400,21 @@ func TestCreateChallengeFlowRecoversAfterSessionSaveFailureAfterAnnouncementSend
 
 	database := openAdminTestDB(t)
 	defer database.Close()
-	publisher := &recordingPublisher{nextMessageID: 575}
+	publisher := newCreateChallengePublisherDeps(575)
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
-	handler.sessions = &failingSessionStore{
-		inner:                 repository.NewAdminSessions(database),
-		failOnPayloadContains: `"announcement_message_id"`,
-		err:                   errors.New("save session failed"),
+	sessionRepo := repository.NewAdminSessions(database)
+	saveSessionErr := errors.New("save session failed")
+	handler.sessions = &MoqSessionStore{
+		GetFunc: sessionRepo.Get,
+		UpsertFunc: func(ctx context.Context, session repository.AdminSession) (repository.AdminSession, error) {
+			if saveSessionErr != nil && strings.Contains(session.PayloadJSON, `"announcement_message_id"`) {
+				err := saveSessionErr
+				saveSessionErr = nil
+				return repository.AdminSession{}, err
+			}
+			return sessionRepo.Upsert(ctx, session)
+		},
+		ClearFunc: sessionRepo.Clear,
 	}
 
 	for _, text := range []string{"/challenge", "Ночь", "#night", "ОК"} {
@@ -435,7 +443,7 @@ func TestCreateChallengeFlowUsesPlainTextForCustomAnnouncement(t *testing.T) {
 
 	database := openAdminTestDB(t)
 	defer database.Close()
-	publisher := &recordingPublisher{nextMessageID: 600}
+	publisher := newCreateChallengePublisherDeps(600)
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
 	for _, text := range []string{"/challenge@PhotoChallengeBot", "Тема", "#topic", "ОК", "custom_text_with_unmatched_underscore_"} {
@@ -458,7 +466,7 @@ func TestCreateChallengeFlowIgnoresCommandMentionedToOtherBot(t *testing.T) {
 
 	database := openAdminTestDB(t)
 	defer database.Close()
-	publisher := &recordingPublisher{nextMessageID: 650}
+	publisher := newCreateChallengePublisherDeps(650)
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
 	if err := handler.HandleAdminChatMessage(context.Background(), adminMessage("/challenge@OtherBot")); err != nil {
@@ -474,7 +482,7 @@ func TestCreateChallengeFlowRejectsInvalidHashtag(t *testing.T) {
 
 	database := openAdminTestDB(t)
 	defer database.Close()
-	publisher := &recordingPublisher{nextMessageID: 700}
+	publisher := newCreateChallengePublisherDeps(700)
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
 	for _, text := range []string{"/challenge", "Ночь", "#night city"} {
@@ -501,7 +509,7 @@ func TestCreateChallengeFlowPersistsResolvedDefaultDates(t *testing.T) {
 
 	database := openAdminTestDB(t)
 	defer database.Close()
-	publisher := &recordingPublisher{nextMessageID: 800}
+	publisher := newCreateChallengePublisherDeps(800)
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
 	for _, text := range []string{"/challenge", "Ночь", "#night", "ОК"} {
@@ -527,7 +535,7 @@ func TestCreateChallengeFlowDoesNotPublishWithStalePlannedNumber(t *testing.T) {
 
 	database := openAdminTestDB(t)
 	defer database.Close()
-	publisher := &recordingPublisher{nextMessageID: 850}
+	publisher := newCreateChallengePublisherDeps(850)
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
 	for _, text := range []string{"/challenge", "Ночь", "#night", "ОК"} {
@@ -576,7 +584,7 @@ func TestCreateChallengeFlowDoesNotPublishWithStalePlannedNumber(t *testing.T) {
 	}
 }
 
-func newAdminTestHandler(t *testing.T, database *sqlx.DB, location *time.Location, publisher *recordingPublisher) *CreateChallengeHandler {
+func newAdminTestHandler(t *testing.T, database *sqlx.DB, location *time.Location, publisher *createChallengePublisherDeps) *CreateChallengeHandler {
 	t.Helper()
 
 	return newAdminTestHandlerWithAnnouncements(t, database, location, publisher, nil)
@@ -586,8 +594,8 @@ func newAdminTestHandlerWithAnnouncements(
 	t *testing.T,
 	database *sqlx.DB,
 	location *time.Location,
-	publisher *recordingPublisher,
-	announcements ChallengeAnnouncements,
+	publisher *createChallengePublisherDeps,
+	announcements challengeAnnouncements,
 ) *CreateChallengeHandler {
 	t.Helper()
 
@@ -608,52 +616,11 @@ func newAdminTestHandlerWithAnnouncements(
 		Challenges:    challenge.NewService(challengeRepo, location, time.Now),
 		Announcements: announcements,
 		Renderer:      renderer,
-		Publisher:     publisher,
+		Publisher:     publisher.mock,
 		BotUsername: func() string {
 			return "PhotoChallengeBot"
 		},
 	})
-}
-
-type failingAnnouncementStore struct {
-	inner       *repository.Challenges
-	failSetOnce error
-}
-
-func (s *failingAnnouncementStore) Get(ctx context.Context, id int64) (repository.Challenge, error) {
-	return s.inner.Get(ctx, id)
-}
-
-func (s *failingAnnouncementStore) SetAnnouncementMessageID(ctx context.Context, id int64, messageID int, updatedAt time.Time) error {
-	if s.failSetOnce != nil {
-		err := s.failSetOnce
-		s.failSetOnce = nil
-		return err
-	}
-	return s.inner.SetAnnouncementMessageID(ctx, id, messageID, updatedAt)
-}
-
-type failingSessionStore struct {
-	inner                 *repository.AdminSessions
-	failOnPayloadContains string
-	err                   error
-}
-
-func (s *failingSessionStore) Get(ctx context.Context, adminChatID int64, adminUserID int64) (*repository.AdminSession, error) {
-	return s.inner.Get(ctx, adminChatID, adminUserID)
-}
-
-func (s *failingSessionStore) Upsert(ctx context.Context, session repository.AdminSession) (repository.AdminSession, error) {
-	if s.err != nil && strings.Contains(session.PayloadJSON, s.failOnPayloadContains) {
-		err := s.err
-		s.err = nil
-		return repository.AdminSession{}, err
-	}
-	return s.inner.Upsert(ctx, session)
-}
-
-func (s *failingSessionStore) Clear(ctx context.Context, adminChatID int64, adminUserID int64) error {
-	return s.inner.Clear(ctx, adminChatID, adminUserID)
 }
 
 func openAdminTestDB(t *testing.T) *sqlx.DB {
@@ -682,7 +649,8 @@ func adminMessage(text string) *models.Message {
 	}
 }
 
-type recordingPublisher struct {
+type createChallengePublisherDeps struct {
+	mock            *MoqCreateChallengePublisher
 	nextMessageID   int
 	failSendForChat map[int64]error
 	failPin         error
@@ -690,47 +658,54 @@ type recordingPublisher struct {
 	pins            []pinnedMessage
 }
 
-func (p *recordingPublisher) SendMarkdown(_ context.Context, chatID int64, text string) (int, error) {
-	if err := p.failSendForChat[chatID]; err != nil {
-		return 0, err
+func newCreateChallengePublisherDeps(nextMessageID int) *createChallengePublisherDeps {
+	deps := &createChallengePublisherDeps{
+		nextMessageID:   nextMessageID,
+		failSendForChat: make(map[int64]error),
 	}
-	p.nextMessageID++
-	messageID := p.nextMessageID
-	p.sent = append(p.sent, sentMessage{
-		chatID:    chatID,
-		messageID: messageID,
-		text:      text,
-		markdown:  true,
-	})
-	return messageID, nil
+	deps.mock = &MoqCreateChallengePublisher{
+		SendMarkdownFunc: func(_ context.Context, chatID int64, text string) (int, error) {
+			if err := deps.failSendForChat[chatID]; err != nil {
+				return 0, err
+			}
+			deps.nextMessageID++
+			messageID := deps.nextMessageID
+			deps.sent = append(deps.sent, sentMessage{
+				chatID:    chatID,
+				messageID: messageID,
+				text:      text,
+				markdown:  true,
+			})
+			return messageID, nil
+		},
+		SendTextFunc: func(_ context.Context, chatID int64, text string) (int, error) {
+			if err := deps.failSendForChat[chatID]; err != nil {
+				return 0, err
+			}
+			deps.nextMessageID++
+			messageID := deps.nextMessageID
+			deps.sent = append(deps.sent, sentMessage{
+				chatID:    chatID,
+				messageID: messageID,
+				text:      text,
+			})
+			return messageID, nil
+		},
+		PinFunc: func(_ context.Context, chatID int64, messageID int) error {
+			if deps.failPin != nil {
+				return deps.failPin
+			}
+			deps.pins = append(deps.pins, pinnedMessage{
+				chatID:    chatID,
+				messageID: messageID,
+			})
+			return nil
+		},
+	}
+	return deps
 }
 
-func (p *recordingPublisher) SendText(_ context.Context, chatID int64, text string) (int, error) {
-	if err := p.failSendForChat[chatID]; err != nil {
-		return 0, err
-	}
-	p.nextMessageID++
-	messageID := p.nextMessageID
-	p.sent = append(p.sent, sentMessage{
-		chatID:    chatID,
-		messageID: messageID,
-		text:      text,
-	})
-	return messageID, nil
-}
-
-func (p *recordingPublisher) Pin(_ context.Context, chatID int64, messageID int) error {
-	if p.failPin != nil {
-		return p.failPin
-	}
-	p.pins = append(p.pins, pinnedMessage{
-		chatID:    chatID,
-		messageID: messageID,
-	})
-	return nil
-}
-
-func (p *recordingPublisher) countSendsTo(chatID int64) int {
+func (p *createChallengePublisherDeps) countSendsTo(chatID int64) int {
 	var count int
 	for _, sent := range p.sent {
 		if sent.chatID == chatID {

@@ -31,19 +31,19 @@ var (
 	ErrMissingCallback = errors.New("callback message is missing")
 )
 
-type ChallengeStore interface {
+type challengeStore interface {
 	Get(context.Context, int64) (repository.Challenge, error)
 }
 
-type UserStore interface {
+type userStore interface {
 	Upsert(context.Context, repository.User) (repository.User, error)
 }
 
-type PhotoStore interface {
+type photoStore interface {
 	ListByChallenge(context.Context, int64) ([]repository.Photo, error)
 }
 
-type VoteStore interface {
+type voteStore interface {
 	CreateVoteOrder(context.Context, int64, int64, []int64) ([]repository.VoteOrderItem, error)
 	ListVoteOrder(context.Context, int64, int64) ([]repository.VoteOrderItem, error)
 	GetProgress(context.Context, int64, int64) (*repository.VoteProgress, error)
@@ -54,7 +54,7 @@ type VoteStore interface {
 	RemoveManualVote(context.Context, int64, int64, int64) (bool, error)
 }
 
-type Publisher interface {
+type publisher interface {
 	SendPhoto(context.Context, int64, string, string, *models.InlineKeyboardMarkup) (int, error)
 	EditPhoto(context.Context, int64, int, string, string, *models.InlineKeyboardMarkup) error
 	SendText(context.Context, int64, string) (int, error)
@@ -62,21 +62,21 @@ type Publisher interface {
 }
 
 type Config struct {
-	Challenges ChallengeStore
-	Users      UserStore
-	Photos     PhotoStore
-	Votes      VoteStore
-	Publisher  Publisher
+	Challenges challengeStore
+	Users      userStore
+	Photos     photoStore
+	Votes      voteStore
+	Publisher  publisher
 	Now        func() time.Time
 	Rand       *rand.Rand
 }
 
 type Service struct {
-	challenges ChallengeStore
-	users      UserStore
-	photos     PhotoStore
-	votes      VoteStore
-	publisher  Publisher
+	challenges challengeStore
+	users      userStore
+	photos     photoStore
+	votes      voteStore
+	publisher  publisher
 	now        func() time.Time
 	rand       *rand.Rand
 }

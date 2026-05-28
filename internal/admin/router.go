@@ -8,28 +8,28 @@ import (
 )
 
 type Router struct {
-	deletePhoto     DeletePhotoCommandHandler
-	finishVote      FinishVoteCommandHandler
-	createChallenge AdminMessageHandler
+	deletePhoto     deletePhotoCommandHandler
+	finishVote      finishVoteCommandHandler
+	createChallenge adminMessageHandler
 }
 
 type RouterConfig struct {
-	DeletePhoto     DeletePhotoCommandHandler
-	FinishVote      FinishVoteCommandHandler
-	CreateChallenge AdminMessageHandler
+	DeletePhoto     deletePhotoCommandHandler
+	FinishVote      finishVoteCommandHandler
+	CreateChallenge adminMessageHandler
 }
 
-type AdminMessageHandler interface {
+type adminMessageHandler interface {
 	HandleAdminChatMessage(context.Context, *models.Message) error
 }
 
-type DeletePhotoCommandHandler interface {
-	AdminMessageHandler
+type deletePhotoCommandHandler interface {
+	adminMessageHandler
 	Handles(string) bool
 }
 
-type FinishVoteCommandHandler interface {
-	AdminMessageHandler
+type finishVoteCommandHandler interface {
+	adminMessageHandler
 	Handles(string) bool
 }
 

@@ -33,11 +33,11 @@ func TestTickSendsReminderOnce(t *testing.T) {
 		CreatedByUserID: 10,
 		CreatedAt:       testTime(0),
 	})
-	publisher := &recordingPublisher{}
+	publisher := newSchedulerPublisherDeps()
 
 	scheduler := newTestScheduler(database, Config{
 		Challenges: repository.NewChallenges(database),
-		Publisher:  publisher,
+		Publisher:  publisher.mock,
 		Now:        func() time.Time { return now },
 	})
 
@@ -85,9 +85,9 @@ func TestNewPanicsOnNilResultsPublisher(t *testing.T) {
 	New(Config{
 		Challenges:  repository.NewChallenges(database),
 		Photos:      repository.NewPhotos(database),
-		Renderer:    voteStartRenderer{},
-		Publisher:   &recordingPublisher{},
-		Topics:      &recordingTopicReporter{},
+		Renderer:    newVoteStartRendererMock(),
+		Publisher:   newSchedulerPublisherDeps().mock,
+		Topics:      newSchedulerTopicReporterDeps().mock,
 		Logger:      slog.Default(),
 		Now:         func() time.Time { return testTime(48 * time.Hour) },
 		BotUsername: func() string { return "PhotoChallengeBot" },
@@ -123,11 +123,11 @@ func TestTickScopesWorkToConfiguredMainChat(t *testing.T) {
 		CreatedByUserID: 10,
 		CreatedAt:       testTime(0),
 	})
-	publisher := &recordingPublisher{}
+	publisher := newSchedulerPublisherDeps()
 	scheduler := newTestScheduler(database, Config{
 		MainChatID: -1001,
 		Challenges: repository.NewChallenges(database),
-		Publisher:  publisher,
+		Publisher:  publisher.mock,
 		Now:        func() time.Time { return now },
 		BatchSize:  1,
 	})
@@ -190,10 +190,11 @@ func TestTickRetriesReminderAfterSendFailure(t *testing.T) {
 		CreatedByUserID: 10,
 		CreatedAt:       testTime(0),
 	})
-	publisher := &recordingPublisher{failNext: true}
+	publisher := newSchedulerPublisherDeps()
+	publisher.failNext = true
 	scheduler := newTestScheduler(database, Config{
 		Challenges: repository.NewChallenges(database),
-		Publisher:  publisher,
+		Publisher:  publisher.mock,
 		Now:        func() time.Time { return now },
 	})
 
@@ -262,9 +263,11 @@ func TestTickSendTimeoutDoesNotBlockClosures(t *testing.T) {
 		CreatedAt:       testTime(0),
 	})
 
+	publisher := newSchedulerPublisherDeps()
+	publisher.blockNext = true
 	scheduler := newTestScheduler(database, Config{
 		Challenges:  repository.NewChallenges(database),
-		Publisher:   &recordingPublisher{blockNext: true},
+		Publisher:   publisher.mock,
 		Now:         func() time.Time { return now },
 		SendTimeout: time.Millisecond,
 	})
@@ -306,10 +309,11 @@ func TestTickReleasesReminderClaimAfterParentCancellation(t *testing.T) {
 		CreatedByUserID: 10,
 		CreatedAt:       testTime(0),
 	})
-	publisher := &recordingPublisher{cancelBeforeError: cancel}
+	publisher := newSchedulerPublisherDeps()
+	publisher.cancelBeforeError = cancel
 	scheduler := newTestScheduler(database, Config{
 		Challenges: repository.NewChallenges(database),
-		Publisher:  publisher,
+		Publisher:  publisher.mock,
 		Now:        func() time.Time { return now },
 	})
 
@@ -347,11 +351,12 @@ func TestReminderMarkFailureIsAtLeastOnceDelivery(t *testing.T) {
 	})
 	insertSchedulerPhoto(t, database, challenge.ID, 20, "photo-a")
 	insertSchedulerPhoto(t, database, challenge.ID, 30, "photo-b")
-	publisher := &recordingPublisher{}
-	challenges := &failingMarkChallenges{Challenges: repository.NewChallenges(database), failNextMark: true}
+	publisher := newSchedulerPublisherDeps()
+	challenges := newSchedulerChallengeDeps(repository.NewChallenges(database))
+	challenges.failNextMark = true
 	scheduler := newTestScheduler(database, Config{
-		Challenges: challenges,
-		Publisher:  publisher,
+		Challenges: challenges.mock,
+		Publisher:  publisher.mock,
 		Now:        func() time.Time { return now },
 	})
 
@@ -525,15 +530,14 @@ func TestRunContinuesAfterTransientTickError(t *testing.T) {
 		CreatedAt:       testTime(0),
 	})
 
-	publisher := &recordingPublisher{
-		failNext: true,
-		afterSend: func() {
-			cancel()
-		},
+	publisher := newSchedulerPublisherDeps()
+	publisher.failNext = true
+	publisher.afterSend = func() {
+		cancel()
 	}
 	scheduler := newTestScheduler(database, Config{
 		Challenges: repository.NewChallenges(database),
-		Publisher:  publisher,
+		Publisher:  publisher.mock,
 		Now:        func() time.Time { return now },
 		Interval:   time.Millisecond,
 	})
@@ -582,10 +586,10 @@ func TestTickClosesAcceptanceWithoutStaleReminder(t *testing.T) {
 	})
 	insertSchedulerPhoto(t, database, challenge.ID, 20, "photo-a")
 	insertSchedulerPhoto(t, database, challenge.ID, 30, "photo-b")
-	publisher := &recordingPublisher{}
+	publisher := newSchedulerPublisherDeps()
 	scheduler := newTestScheduler(database, Config{
 		Challenges: repository.NewChallenges(database),
-		Publisher:  publisher,
+		Publisher:  publisher.mock,
 		Now:        func() time.Time { return now },
 	})
 
@@ -641,9 +645,10 @@ func TestTickRetriesVoteStartPinWithoutDuplicateMessage(t *testing.T) {
 		CreatedAt:       testTime(0),
 	})
 
-	publisher := &recordingPublisher{failPin: true}
+	publisher := newSchedulerPublisherDeps()
+	publisher.failPin = true
 	scheduler := newTestScheduler(database, Config{
-		Publisher: publisher,
+		Publisher: publisher.mock,
 		Now:       func() time.Time { return now },
 	})
 
@@ -711,9 +716,9 @@ func TestTickExtendsExpiredUnpublishedVoteWindowBeforePublishing(t *testing.T) {
 		t.Fatalf("seed expired unpublished voting: %v", err)
 	}
 
-	publisher := &recordingPublisher{}
+	publisher := newSchedulerPublisherDeps()
 	scheduler := newTestScheduler(database, Config{
-		Publisher: publisher,
+		Publisher: publisher.mock,
 		Now:       func() time.Time { return now },
 	})
 
@@ -767,8 +772,10 @@ func TestTickDoesNotFinishExpiredVotingBeforeVoteStartPinned(t *testing.T) {
 		t.Fatalf("seed expired unpublished voting: %v", err)
 	}
 
+	publisher := newSchedulerPublisherDeps()
+	publisher.failNext = true
 	scheduler := newTestScheduler(database, Config{
-		Publisher: &recordingPublisher{failNext: true},
+		Publisher: publisher.mock,
 		Now:       func() time.Time { return now },
 	})
 
@@ -799,7 +806,7 @@ func TestTickDoesNotExtendVotingWindowWhenVoteLinkFails(t *testing.T) {
 	challenge := seedExpiredUnpublishedVoting(t, ctx, database, now)
 
 	scheduler := newTestScheduler(database, Config{
-		Publisher:   &recordingPublisher{},
+		Publisher:   newSchedulerPublisherDeps().mock,
 		BotUsername: func() string { return "" },
 		Now:         func() time.Time { return now },
 	})
@@ -819,8 +826,8 @@ func TestTickDoesNotExtendVotingWindowWhenVoteStartRenderFails(t *testing.T) {
 	challenge := seedExpiredUnpublishedVoting(t, ctx, database, now)
 
 	scheduler := newTestScheduler(database, Config{
-		Renderer:  failingVoteStartRenderer{},
-		Publisher: &recordingPublisher{},
+		Renderer:  newFailingVoteStartRendererMock(),
+		Publisher: newSchedulerPublisherDeps().mock,
 		Now:       func() time.Time { return now },
 	})
 
@@ -848,10 +855,11 @@ func TestTickResetsVotingWindowFromSuccessfulVoteStartRetry(t *testing.T) {
 		CreatedAt:       testTime(0),
 	})
 	insertSchedulerPhoto(t, database, challenge.ID, 20, "photo-a")
-	publisher := &recordingPublisher{failNext: true}
+	publisher := newSchedulerPublisherDeps()
+	publisher.failNext = true
 	now := firstAttemptAt
 	scheduler := newTestScheduler(database, Config{
-		Publisher: publisher,
+		Publisher: publisher.mock,
 		Now:       func() time.Time { return now },
 	})
 
@@ -902,14 +910,12 @@ func TestTickRecordsVoteMessageIDAfterClaimedPersistFailure(t *testing.T) {
 		CreatedAt:       testTime(0),
 	})
 	insertSchedulerPhoto(t, database, challenge.ID, 20, "photo-a")
-	challenges := &failingMarkChallenges{
-		Challenges:           repository.NewChallenges(database),
-		failSetVoteMessageID: true,
-	}
-	publisher := &recordingPublisher{}
+	challenges := newSchedulerChallengeDeps(repository.NewChallenges(database))
+	challenges.failSetVoteMessageID = true
+	publisher := newSchedulerPublisherDeps()
 	scheduler := newTestScheduler(database, Config{
-		Challenges: challenges,
-		Publisher:  publisher,
+		Challenges: challenges.mock,
+		Publisher:  publisher.mock,
 		Now:        func() time.Time { return now },
 	})
 
@@ -969,10 +975,10 @@ func TestTickRetriesExistingVoteStartPinWithoutRendering(t *testing.T) {
 		t.Fatalf("ReleaseVoteStartClaim() error = %v", err)
 	}
 
-	publisher := &recordingPublisher{}
+	publisher := newSchedulerPublisherDeps()
 	scheduler := newTestScheduler(database, Config{
-		Renderer:    failingVoteStartRenderer{},
-		Publisher:   publisher,
+		Renderer:    newFailingVoteStartRendererMock(),
+		Publisher:   publisher.mock,
 		Now:         func() time.Time { return now },
 		BatchSize:   10,
 		SendTimeout: time.Second,
@@ -1016,7 +1022,7 @@ func TestTickDoesNotCloseFractionalFutureAcceptance(t *testing.T) {
 
 	scheduler := newTestScheduler(database, Config{
 		Challenges: repository.NewChallenges(database),
-		Publisher:  &recordingPublisher{},
+		Publisher:  newSchedulerPublisherDeps().mock,
 		Now:        func() time.Time { return now },
 	})
 	if err := scheduler.Tick(ctx); err != nil {
@@ -1059,7 +1065,7 @@ func TestTickClosesMixedFormatAcceptanceBoundary(t *testing.T) {
 
 	scheduler := newTestScheduler(database, Config{
 		Challenges: repository.NewChallenges(database),
-		Publisher:  &recordingPublisher{},
+		Publisher:  newSchedulerPublisherDeps().mock,
 		Now:        func() time.Time { return now },
 	})
 	if err := scheduler.Tick(ctx); err != nil {
@@ -1107,7 +1113,7 @@ func TestTickClosesVotingWhenDue(t *testing.T) {
 
 	scheduler := newTestScheduler(database, Config{
 		Challenges: repository.NewChallenges(database),
-		Publisher:  &recordingPublisher{},
+		Publisher:  newSchedulerPublisherDeps().mock,
 		Now:        func() time.Time { return now },
 	})
 	if err := scheduler.Tick(ctx); err != nil {
@@ -1156,12 +1162,12 @@ func TestTickPublishesDueTopicReportsAfterVotingClosure(t *testing.T) {
 		t.Fatalf("mark challenge voting: %v", err)
 	}
 
-	topics := &recordingTopicReporter{}
+	topics := newSchedulerTopicReporterDeps()
 	scheduler := newTestScheduler(database, Config{
 		MainChatID: -1001,
 		Challenges: repository.NewChallenges(database),
-		Publisher:  &recordingPublisher{},
-		Topics:     topics,
+		Publisher:  newSchedulerPublisherDeps().mock,
+		Topics:     topics.mock,
 		Now:        func() time.Time { return now },
 	})
 	if err := scheduler.Tick(ctx); err != nil {
@@ -1181,16 +1187,16 @@ func newTestScheduler(database *sqlx.DB, config Config) *Scheduler {
 		config.Photos = repository.NewPhotos(database)
 	}
 	if config.Renderer == nil {
-		config.Renderer = voteStartRenderer{}
+		config.Renderer = newVoteStartRendererMock()
 	}
 	if config.Results == nil {
-		config.Results = &recordingResultsPublisher{}
+		config.Results = newSchedulerResultsPublisherDeps().mock
 	}
 	if config.Topics == nil {
-		config.Topics = &recordingTopicReporter{}
+		config.Topics = newSchedulerTopicReporterDeps().mock
 	}
 	if config.Publisher == nil {
-		config.Publisher = &recordingPublisher{}
+		config.Publisher = newSchedulerPublisherDeps().mock
 	}
 	if config.Logger == nil {
 		config.Logger = slog.Default()
@@ -1309,7 +1315,8 @@ func timeString(value time.Time) string {
 	return value.UTC().Format(time.RFC3339Nano)
 }
 
-type recordingPublisher struct {
+type schedulerPublisherDeps struct {
+	mock              *MoqPublisher
 	failNext          bool
 	failPin           bool
 	blockNext         bool
@@ -1329,102 +1336,132 @@ type recordedPin struct {
 	messageID int
 }
 
-func (p *recordingPublisher) SendMarkdown(ctx context.Context, chatID int64, text string) (int, error) {
-	if p.failNext {
-		p.failNext = false
-		return 0, errors.New("send failed")
+func newSchedulerPublisherDeps() *schedulerPublisherDeps {
+	deps := &schedulerPublisherDeps{}
+	deps.mock = &MoqPublisher{
+		SendMarkdownFunc: func(ctx context.Context, chatID int64, text string) (int, error) {
+			if deps.failNext {
+				deps.failNext = false
+				return 0, errors.New("send failed")
+			}
+			if deps.blockNext {
+				deps.blockNext = false
+				<-ctx.Done()
+				return 0, ctx.Err()
+			}
+			if deps.cancelBeforeError != nil {
+				deps.cancelBeforeError()
+				return 0, context.Canceled
+			}
+			deps.messages = append(deps.messages, recordedMessage{chatID: chatID, text: text})
+			if deps.afterSend != nil {
+				deps.afterSend()
+			}
+			return len(deps.messages), nil
+		},
+		PinFunc: func(_ context.Context, chatID int64, messageID int) error {
+			if deps.failPin {
+				deps.failPin = false
+				return errors.New("pin failed")
+			}
+			deps.pins = append(deps.pins, recordedPin{chatID: chatID, messageID: messageID})
+			return nil
+		},
 	}
-	if p.blockNext {
-		p.blockNext = false
-		<-ctx.Done()
-		return 0, ctx.Err()
-	}
-	if p.cancelBeforeError != nil {
-		p.cancelBeforeError()
-		return 0, context.Canceled
-	}
-	p.messages = append(p.messages, recordedMessage{chatID: chatID, text: text})
-	if p.afterSend != nil {
-		p.afterSend()
-	}
-	return len(p.messages), nil
+	return deps
 }
 
-func (p *recordingPublisher) Pin(_ context.Context, chatID int64, messageID int) error {
-	if p.failPin {
-		p.failPin = false
-		return errors.New("pin failed")
-	}
-	p.pins = append(p.pins, recordedPin{chatID: chatID, messageID: messageID})
-	return nil
-}
-
-type recordingTopicReporter struct {
+type schedulerTopicReporterDeps struct {
+	mock       *MoqTopicReporter
 	mainChatID int64
 	limit      int
 	err        error
 }
 
-func (r *recordingTopicReporter) PublishDue(_ context.Context, mainChatID int64, limit int) error {
-	r.mainChatID = mainChatID
-	r.limit = limit
-	return r.err
+func newSchedulerTopicReporterDeps() *schedulerTopicReporterDeps {
+	deps := &schedulerTopicReporterDeps{}
+	deps.mock = &MoqTopicReporter{
+		PublishDueFunc: func(_ context.Context, mainChatID int64, limit int) error {
+			deps.mainChatID = mainChatID
+			deps.limit = limit
+			return deps.err
+		},
+	}
+	return deps
 }
 
-type recordingResultsPublisher struct {
+type schedulerResultsPublisherDeps struct {
+	mock       *MoqResultsPublisher
 	mainChatID int64
 	limit      int
 	err        error
 }
 
-func (r *recordingResultsPublisher) PublishDue(_ context.Context, mainChatID int64, limit int) error {
-	r.mainChatID = mainChatID
-	r.limit = limit
-	return r.err
+func newSchedulerResultsPublisherDeps() *schedulerResultsPublisherDeps {
+	deps := &schedulerResultsPublisherDeps{}
+	deps.mock = &MoqResultsPublisher{
+		PublishDueFunc: func(_ context.Context, mainChatID int64, limit int) error {
+			deps.mainChatID = mainChatID
+			deps.limit = limit
+			return deps.err
+		},
+	}
+	return deps
 }
 
-type voteStartRenderer struct{}
-
-func (voteStartRenderer) VoteStart(data templates.VoteStartData) (string, error) {
-	return "vote: " + data.Theme + " " + strconv.Itoa(data.AmountPhoto) + " " + data.VoteLink + " " + data.ResultsDate, nil
+func newVoteStartRendererMock() *MoqVoteStartRenderer {
+	return &MoqVoteStartRenderer{
+		VoteStartFunc: func(data templates.VoteStartData) (string, error) {
+			return "vote: " + data.Theme + " " + strconv.Itoa(data.AmountPhoto) + " " + data.VoteLink + " " + data.ResultsDate, nil
+		},
+	}
 }
 
-type failingVoteStartRenderer struct{}
-
-func (failingVoteStartRenderer) VoteStart(templates.VoteStartData) (string, error) {
-	return "", errors.New("render failed")
+func newFailingVoteStartRendererMock() *MoqVoteStartRenderer {
+	return &MoqVoteStartRenderer{
+		VoteStartFunc: func(templates.VoteStartData) (string, error) {
+			return "", errors.New("render failed")
+		},
+	}
 }
 
-type failingMarkChallenges struct {
-	*repository.Challenges
+type schedulerChallengeDeps struct {
+	mock                 *MoqChallenges
+	challenges           *repository.Challenges
 	failNextMark         bool
 	failSetVoteMessageID bool
 }
 
-func (c *failingMarkChallenges) MarkReminderSent(
-	ctx context.Context,
-	id int64,
-	messageID int,
-	claimedAt time.Time,
-	sentAt time.Time,
-) (bool, error) {
-	if c.failNextMark {
-		c.failNextMark = false
-		return false, errors.New("mark failed")
+func newSchedulerChallengeDeps(challenges *repository.Challenges) *schedulerChallengeDeps {
+	deps := &schedulerChallengeDeps{challenges: challenges}
+	deps.mock = &MoqChallenges{
+		ListDueRemindersFunc:          challenges.ListDueReminders,
+		ClaimReminderFunc:             challenges.ClaimReminder,
+		ReleaseReminderClaimFunc:      challenges.ReleaseReminderClaim,
+		ListDueAcceptanceClosuresFunc: challenges.ListDueAcceptanceClosures,
+		StartVotingFunc:               challenges.StartVoting,
+		ListUnpublishedVoteStartsFunc: challenges.ListUnpublishedVoteStarts,
+		ClaimVoteStartFunc:            challenges.ClaimVoteStart,
+		RecordVoteMessageIDFunc:       challenges.RecordVoteMessageID,
+		MarkVoteStartPinnedFunc:       challenges.MarkVoteStartPinned,
+		ReleaseVoteStartClaimFunc:     challenges.ReleaseVoteStartClaim,
+		ExtendVoteUntilFunc:           challenges.ExtendVoteUntil,
+		ListDueVotingClosuresFunc:     challenges.ListDueVotingClosures,
+		FinishVotingFunc:              challenges.FinishVoting,
+		MarkReminderSentFunc: func(ctx context.Context, id int64, messageID int, claimedAt time.Time, sentAt time.Time) (bool, error) {
+			if deps.failNextMark {
+				deps.failNextMark = false
+				return false, errors.New("mark failed")
+			}
+			return deps.challenges.MarkReminderSent(ctx, id, messageID, claimedAt, sentAt)
+		},
+		SetVoteMessageIDFunc: func(ctx context.Context, id int64, messageID int, claimedAt time.Time, updatedAt time.Time) (bool, error) {
+			if deps.failSetVoteMessageID {
+				deps.failSetVoteMessageID = false
+				return false, errors.New("set vote message id failed")
+			}
+			return deps.challenges.SetVoteMessageID(ctx, id, messageID, claimedAt, updatedAt)
+		},
 	}
-	return c.Challenges.MarkReminderSent(ctx, id, messageID, claimedAt, sentAt)
-}
-
-func (c *failingMarkChallenges) SetVoteMessageID(
-	ctx context.Context,
-	id int64,
-	messageID int,
-	claimedAt time.Time,
-	updatedAt time.Time,
-) (bool, error) {
-	if c.failSetVoteMessageID {
-		c.failSetVoteMessageID = false
-		return false, errors.New("set vote message id failed")
-	}
-	return c.Challenges.SetVoteMessageID(ctx, id, messageID, claimedAt, updatedAt)
+	return deps
 }

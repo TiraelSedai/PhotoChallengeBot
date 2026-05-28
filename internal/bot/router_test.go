@@ -11,8 +11,8 @@ import (
 )
 
 func TestRouterDispatchesMainChatMessage(t *testing.T) {
-	recorder := &recordingHandlers{}
-	router := newTestRouter(recorder)
+	deps := newRouterDeps(nil)
+	router := newTestRouter(deps)
 
 	update := &models.Update{
 		Message: &models.Message{
@@ -27,13 +27,13 @@ func TestRouterDispatchesMainChatMessage(t *testing.T) {
 	}
 
 	want := []string{"main:10"}
-	if !reflect.DeepEqual(recorder.calls, want) {
-		t.Fatalf("calls = %v, want %v", recorder.calls, want)
+	if !reflect.DeepEqual(deps.calls, want) {
+		t.Fatalf("calls = %v, want %v", deps.calls, want)
 	}
 }
 
 func TestNewRouterPanicsOnNilErrorHandler(t *testing.T) {
-	recorder := &recordingHandlers{}
+	deps := newRouterDeps(nil)
 	defer func() {
 		if recover() == nil {
 			t.Fatal("NewRouter() did not panic")
@@ -43,16 +43,16 @@ func TestNewRouterPanicsOnNilErrorHandler(t *testing.T) {
 		MainChatID:          1001,
 		AdminChatID:         2002,
 		BotUsername:         func() string { return "PhotoChallengeBot" },
-		MainChatHandler:     recorder,
-		AdminChatHandler:    recorder,
-		PrivateStartHandler: recorder,
-		CallbackHandler:     recorder,
+		MainChatHandler:     deps.main,
+		AdminChatHandler:    deps.admin,
+		PrivateStartHandler: deps.privateStart,
+		CallbackHandler:     deps.callback,
 	})
 }
 
 func TestNewRouterPanicsOnTypedNilMainChatHandler(t *testing.T) {
-	var mainChatHandler *recordingHandlers
-	recorder := &recordingHandlers{}
+	var mainChatHandler *MoqMainChatHandler
+	deps := newRouterDeps(nil)
 	defer func() {
 		if recover() == nil {
 			t.Fatal("NewRouter() did not panic")
@@ -63,16 +63,16 @@ func TestNewRouterPanicsOnTypedNilMainChatHandler(t *testing.T) {
 		AdminChatID:         2002,
 		BotUsername:         func() string { return "PhotoChallengeBot" },
 		MainChatHandler:     mainChatHandler,
-		AdminChatHandler:    recorder,
-		PrivateStartHandler: recorder,
-		CallbackHandler:     recorder,
+		AdminChatHandler:    deps.admin,
+		PrivateStartHandler: deps.privateStart,
+		CallbackHandler:     deps.callback,
 		OnError:             func(context.Context, *models.Update, error) {},
 	})
 }
 
 func TestRouterDispatchesAdminChatMessage(t *testing.T) {
-	recorder := &recordingHandlers{}
-	router := newTestRouter(recorder)
+	deps := newRouterDeps(nil)
+	router := newTestRouter(deps)
 
 	update := &models.Update{
 		Message: &models.Message{
@@ -87,14 +87,14 @@ func TestRouterDispatchesAdminChatMessage(t *testing.T) {
 	}
 
 	want := []string{"admin:11"}
-	if !reflect.DeepEqual(recorder.calls, want) {
-		t.Fatalf("calls = %v, want %v", recorder.calls, want)
+	if !reflect.DeepEqual(deps.calls, want) {
+		t.Fatalf("calls = %v, want %v", deps.calls, want)
 	}
 }
 
 func TestRouterDispatchesPrivateStartPayload(t *testing.T) {
-	recorder := &recordingHandlers{}
-	router := newTestRouter(recorder)
+	deps := newRouterDeps(nil)
+	router := newTestRouter(deps)
 
 	update := &models.Update{
 		Message: &models.Message{
@@ -109,14 +109,14 @@ func TestRouterDispatchesPrivateStartPayload(t *testing.T) {
 	}
 
 	want := []string{"start:1001_42"}
-	if !reflect.DeepEqual(recorder.calls, want) {
-		t.Fatalf("calls = %v, want %v", recorder.calls, want)
+	if !reflect.DeepEqual(deps.calls, want) {
+		t.Fatalf("calls = %v, want %v", deps.calls, want)
 	}
 }
 
 func TestRouterDispatchesMentionedPrivateStartPayload(t *testing.T) {
-	recorder := &recordingHandlers{}
-	router := newTestRouter(recorder)
+	deps := newRouterDeps(nil)
+	router := newTestRouter(deps)
 
 	update := &models.Update{
 		Message: &models.Message{
@@ -131,14 +131,14 @@ func TestRouterDispatchesMentionedPrivateStartPayload(t *testing.T) {
 	}
 
 	want := []string{"start:1001_42"}
-	if !reflect.DeepEqual(recorder.calls, want) {
-		t.Fatalf("calls = %v, want %v", recorder.calls, want)
+	if !reflect.DeepEqual(deps.calls, want) {
+		t.Fatalf("calls = %v, want %v", deps.calls, want)
 	}
 }
 
 func TestRouterIgnoresPrivateStartMentionedToOtherBot(t *testing.T) {
-	recorder := &recordingHandlers{}
-	router := newTestRouter(recorder)
+	deps := newRouterDeps(nil)
+	router := newTestRouter(deps)
 
 	update := &models.Update{
 		Message: &models.Message{
@@ -151,14 +151,14 @@ func TestRouterIgnoresPrivateStartMentionedToOtherBot(t *testing.T) {
 	if err := router.Route(context.Background(), update); err != nil {
 		t.Fatalf("Route() error = %v", err)
 	}
-	if len(recorder.calls) != 0 {
-		t.Fatalf("calls = %v, want no calls", recorder.calls)
+	if len(deps.calls) != 0 {
+		t.Fatalf("calls = %v, want no calls", deps.calls)
 	}
 }
 
 func TestRouterDispatchesCallbackQueryBeforeMessage(t *testing.T) {
-	recorder := &recordingHandlers{}
-	router := newTestRouter(recorder)
+	deps := newRouterDeps(nil)
+	router := newTestRouter(deps)
 
 	update := &models.Update{
 		Message: &models.Message{
@@ -176,14 +176,14 @@ func TestRouterDispatchesCallbackQueryBeforeMessage(t *testing.T) {
 	}
 
 	want := []string{"callback:callback-1"}
-	if !reflect.DeepEqual(recorder.calls, want) {
-		t.Fatalf("calls = %v, want %v", recorder.calls, want)
+	if !reflect.DeepEqual(deps.calls, want) {
+		t.Fatalf("calls = %v, want %v", deps.calls, want)
 	}
 }
 
 func TestRouterIgnoresUnsupportedUpdates(t *testing.T) {
-	recorder := &recordingHandlers{}
-	router := newTestRouter(recorder)
+	deps := newRouterDeps(nil)
+	router := newTestRouter(deps)
 
 	update := &models.Update{
 		Message: &models.Message{
@@ -197,15 +197,15 @@ func TestRouterIgnoresUnsupportedUpdates(t *testing.T) {
 		t.Fatalf("Route() error = %v", err)
 	}
 
-	if len(recorder.calls) != 0 {
-		t.Fatalf("calls = %v, want no calls", recorder.calls)
+	if len(deps.calls) != 0 {
+		t.Fatalf("calls = %v, want no calls", deps.calls)
 	}
 }
 
 func TestRouterReturnsHandlerError(t *testing.T) {
 	wantErr := errors.New("handler failed")
-	recorder := &recordingHandlers{err: wantErr}
-	router := newTestRouter(recorder)
+	deps := newRouterDeps(wantErr)
+	router := newTestRouter(deps)
 
 	update := &models.Update{
 		Message: &models.Message{
@@ -222,7 +222,7 @@ func TestRouterReturnsHandlerError(t *testing.T) {
 
 func TestHandlerFuncReportsRouteError(t *testing.T) {
 	wantErr := errors.New("handler failed")
-	recorder := &recordingHandlers{err: wantErr}
+	deps := newRouterDeps(wantErr)
 	var gotErr error
 	router := NewRouter(Config{
 		MainChatID:  1001,
@@ -230,10 +230,10 @@ func TestHandlerFuncReportsRouteError(t *testing.T) {
 		BotUsername: func() string {
 			return "PhotoChallengeBot"
 		},
-		MainChatHandler:     recorder,
-		AdminChatHandler:    recorder,
-		PrivateStartHandler: recorder,
-		CallbackHandler:     recorder,
+		MainChatHandler:     deps.main,
+		AdminChatHandler:    deps.admin,
+		PrivateStartHandler: deps.privateStart,
+		CallbackHandler:     deps.callback,
 		OnError: func(_ context.Context, _ *models.Update, err error) {
 			gotErr = err
 		},
@@ -254,73 +254,84 @@ func TestHandlerFuncReportsRouteError(t *testing.T) {
 }
 
 func TestMainChatHandlersRunInOrder(t *testing.T) {
-	first := &recordingHandlers{}
-	second := &recordingHandlers{}
+	var calls []string
+	first := &MoqMainChatHandler{HandleMainChatMessageFunc: func(_ context.Context, message *models.Message) error {
+		calls = append(calls, "first")
+		return nil
+	}}
+	second := &MoqMainChatHandler{HandleMainChatMessageFunc: func(_ context.Context, message *models.Message) error {
+		calls = append(calls, "second")
+		return nil
+	}}
 	handlers := MainChatHandlers{first, second}
 	message := &models.Message{ID: 21}
 
 	if err := handlers.HandleMainChatMessage(context.Background(), message); err != nil {
 		t.Fatalf("HandleMainChatMessage() error = %v", err)
 	}
-	if got := first.calls; !reflect.DeepEqual(got, []string{"main:21"}) {
-		t.Fatalf("first calls = %v, want main call", got)
-	}
-	if got := second.calls; !reflect.DeepEqual(got, []string{"main:21"}) {
-		t.Fatalf("second calls = %v, want main call", got)
+	if !reflect.DeepEqual(calls, []string{"first", "second"}) {
+		t.Fatalf("calls = %v, want both handlers", calls)
 	}
 }
 
 func TestMainChatHandlersStopOnError(t *testing.T) {
 	wantErr := errors.New("main failed")
-	first := &recordingHandlers{err: wantErr}
-	second := &recordingHandlers{}
+	first := &MoqMainChatHandler{HandleMainChatMessageFunc: func(context.Context, *models.Message) error {
+		return wantErr
+	}}
+	second := &MoqMainChatHandler{}
 	handlers := MainChatHandlers{first, second}
 
 	err := handlers.HandleMainChatMessage(context.Background(), &models.Message{ID: 22})
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("HandleMainChatMessage() error = %v, want %v", err, wantErr)
 	}
-	if len(second.calls) != 0 {
-		t.Fatalf("second calls = %v, want none after error", second.calls)
+	if len(second.HandleMainChatMessageCalls()) != 0 {
+		t.Fatalf("second calls = %#v, want none after error", second.HandleMainChatMessageCalls())
 	}
 }
 
-type recordingHandlers struct {
-	calls []string
-	err   error
+type routerDeps struct {
+	calls        []string
+	err          error
+	main         *MoqMainChatHandler
+	admin        *MoqAdminChatHandler
+	privateStart *MoqPrivateStartHandler
+	callback     *MoqCallbackQueryHandler
 }
 
-func newTestRouter(recorder *recordingHandlers) *Router {
+func newRouterDeps(err error) *routerDeps {
+	deps := &routerDeps{err: err}
+	deps.main = &MoqMainChatHandler{HandleMainChatMessageFunc: func(_ context.Context, message *models.Message) error {
+		deps.calls = append(deps.calls, "main:"+strconv.Itoa(message.ID))
+		return deps.err
+	}}
+	deps.admin = &MoqAdminChatHandler{HandleAdminChatMessageFunc: func(_ context.Context, message *models.Message) error {
+		deps.calls = append(deps.calls, "admin:"+strconv.Itoa(message.ID))
+		return deps.err
+	}}
+	deps.privateStart = &MoqPrivateStartHandler{HandlePrivateStartFunc: func(_ context.Context, _ *models.Message, payload string) error {
+		deps.calls = append(deps.calls, "start:"+payload)
+		return deps.err
+	}}
+	deps.callback = &MoqCallbackQueryHandler{HandleCallbackQueryFunc: func(_ context.Context, query *models.CallbackQuery) error {
+		deps.calls = append(deps.calls, "callback:"+query.ID)
+		return deps.err
+	}}
+	return deps
+}
+
+func newTestRouter(deps *routerDeps) *Router {
 	return NewRouter(Config{
 		MainChatID:  1001,
 		AdminChatID: 2002,
 		BotUsername: func() string {
 			return "PhotoChallengeBot"
 		},
-		MainChatHandler:     recorder,
-		AdminChatHandler:    recorder,
-		PrivateStartHandler: recorder,
-		CallbackHandler:     recorder,
+		MainChatHandler:     deps.main,
+		AdminChatHandler:    deps.admin,
+		PrivateStartHandler: deps.privateStart,
+		CallbackHandler:     deps.callback,
 		OnError:             func(context.Context, *models.Update, error) {},
 	})
-}
-
-func (h *recordingHandlers) HandleMainChatMessage(_ context.Context, message *models.Message) error {
-	h.calls = append(h.calls, "main:"+strconv.Itoa(message.ID))
-	return h.err
-}
-
-func (h *recordingHandlers) HandleAdminChatMessage(_ context.Context, message *models.Message) error {
-	h.calls = append(h.calls, "admin:"+strconv.Itoa(message.ID))
-	return h.err
-}
-
-func (h *recordingHandlers) HandlePrivateStart(_ context.Context, _ *models.Message, payload string) error {
-	h.calls = append(h.calls, "start:"+payload)
-	return h.err
-}
-
-func (h *recordingHandlers) HandleCallbackQuery(_ context.Context, query *models.CallbackQuery) error {
-	h.calls = append(h.calls, "callback:"+query.ID)
-	return h.err
 }

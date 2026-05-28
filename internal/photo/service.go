@@ -15,37 +15,37 @@ const (
 	photoReplacedMessage      = "Фотка класс! Спасибо, принято. Старую конкурсную фотографию заменил на новую."
 )
 
-type Challenges interface {
+type challenges interface {
 	FindOpenByMainChatID(context.Context, int64) (*repository.Challenge, error)
 }
 
-type Users interface {
+type users interface {
 	Upsert(context.Context, repository.User) (repository.User, error)
 }
 
-type Photos interface {
+type photos interface {
 	UpsertCurrent(context.Context, repository.UpsertPhotoInput) (repository.Photo, bool, error)
 }
 
-type Publisher interface {
+type publisher interface {
 	SendText(context.Context, int64, string) (int, error)
 }
 
 type Service struct {
 	mainChatID int64
-	challenges Challenges
-	users      Users
-	photos     Photos
-	publisher  Publisher
+	challenges challenges
+	users      users
+	photos     photos
+	publisher  publisher
 	now        func() time.Time
 }
 
 type Config struct {
 	MainChatID int64
-	Challenges Challenges
-	Users      Users
-	Photos     Photos
-	Publisher  Publisher
+	Challenges challenges
+	Users      users
+	Photos     photos
+	Publisher  publisher
 	Now        func() time.Time
 }
 

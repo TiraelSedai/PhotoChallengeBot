@@ -10,12 +10,15 @@ import (
 )
 
 func TestRunnerGetsBotUsernameBeforeStarting(t *testing.T) {
-	client := &fakeClient{
-		me: &models.User{
-			ID:       42,
-			IsBot:    true,
-			Username: "PhotoChallengeBot",
+	client := &MoqClient{
+		GetMeFunc: func(context.Context) (*models.User, error) {
+			return &models.User{
+				ID:       42,
+				IsBot:    true,
+				Username: "PhotoChallengeBot",
+			}, nil
 		},
+		StartFunc: func(context.Context) {},
 	}
 	runner := NewWithClient(client)
 
@@ -23,10 +26,10 @@ func TestRunnerGetsBotUsernameBeforeStarting(t *testing.T) {
 		t.Fatalf("Run() error = %v", err)
 	}
 
-	if !client.getMeCalled {
+	if len(client.GetMeCalls()) != 1 {
 		t.Fatal("GetMe was not called")
 	}
-	if !client.startCalled {
+	if len(client.StartCalls()) != 1 {
 		t.Fatal("Start was not called")
 	}
 	if got := runner.Username(); got != "PhotoChallengeBot" {
@@ -35,12 +38,15 @@ func TestRunnerGetsBotUsernameBeforeStarting(t *testing.T) {
 }
 
 func TestRunnerDoesNotFetchIdentityTwice(t *testing.T) {
-	client := &fakeClient{
-		me: &models.User{
-			ID:       42,
-			IsBot:    true,
-			Username: "PhotoChallengeBot",
+	client := &MoqClient{
+		GetMeFunc: func(context.Context) (*models.User, error) {
+			return &models.User{
+				ID:       42,
+				IsBot:    true,
+				Username: "PhotoChallengeBot",
+			}, nil
 		},
+		StartFunc: func(context.Context) {},
 	}
 	runner := NewWithClient(client)
 
@@ -51,24 +57,26 @@ func TestRunnerDoesNotFetchIdentityTwice(t *testing.T) {
 		t.Fatalf("Run() error = %v", err)
 	}
 
-	if client.getMeCalls != 1 {
-		t.Fatalf("GetMe calls = %d, want 1", client.getMeCalls)
+	if got := len(client.GetMeCalls()); got != 1 {
+		t.Fatalf("GetMe calls = %d, want 1", got)
 	}
-	if !client.startCalled {
+	if len(client.StartCalls()) != 1 {
 		t.Fatal("Start was not called")
 	}
 }
 
 func TestRunnerReturnsGetMeErrorWithoutStarting(t *testing.T) {
 	wantErr := errors.New("telegram unavailable")
-	client := &fakeClient{err: wantErr}
+	client := &MoqClient{GetMeFunc: func(context.Context) (*models.User, error) {
+		return nil, wantErr
+	}}
 	runner := NewWithClient(client)
 
 	err := runner.Run(context.Background())
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("Run() error = %v, want %v", err, wantErr)
 	}
-	if client.startCalled {
+	if len(client.StartCalls()) != 0 {
 		t.Fatal("Start was called after GetMe error")
 	}
 }
@@ -84,9 +92,13 @@ func TestRunnerRejectsNilClient(t *testing.T) {
 }
 
 func TestRunnerSendsAndPinsMarkdownMessage(t *testing.T) {
-	client := &fakeClient{
-		sentMessage: &models.Message{ID: 101},
-		pinOK:       true,
+	client := &MoqClient{
+		SendMessageFunc: func(_ context.Context, _ *tgbot.SendMessageParams) (*models.Message, error) {
+			return &models.Message{ID: 101}, nil
+		},
+		PinChatMessageFunc: func(context.Context, *tgbot.PinChatMessageParams) (bool, error) {
+			return true, nil
+		},
 	}
 	runner := NewWithClient(client)
 
@@ -97,25 +109,27 @@ func TestRunnerSendsAndPinsMarkdownMessage(t *testing.T) {
 	if messageID != 101 {
 		t.Fatalf("messageID = %d, want 101", messageID)
 	}
-	if client.sendParams == nil || client.sendParams.ChatID != int64(-1001) || client.sendParams.Text != "*hello*" {
-		t.Fatalf("send params = %#v, want markdown message", client.sendParams)
+	sendCalls := client.SendMessageCalls()
+	if len(sendCalls) != 1 || sendCalls[0].SendMessageParams.ChatID != int64(-1001) || sendCalls[0].SendMessageParams.Text != "*hello*" {
+		t.Fatalf("send calls = %#v, want markdown message", sendCalls)
 	}
-	if client.sendParams.ParseMode != models.ParseModeMarkdownV1 {
-		t.Fatalf("ParseMode = %q, want Markdown", client.sendParams.ParseMode)
+	if sendCalls[0].SendMessageParams.ParseMode != models.ParseModeMarkdownV1 {
+		t.Fatalf("ParseMode = %q, want Markdown", sendCalls[0].SendMessageParams.ParseMode)
 	}
 
 	if err := runner.Pin(context.Background(), -1001, messageID); err != nil {
 		t.Fatalf("Pin() error = %v", err)
 	}
-	if client.pinParams == nil || client.pinParams.ChatID != int64(-1001) || client.pinParams.MessageID != 101 {
-		t.Fatalf("pin params = %#v, want message 101", client.pinParams)
+	pinCalls := client.PinChatMessageCalls()
+	if len(pinCalls) != 1 || pinCalls[0].PinChatMessageParams.ChatID != int64(-1001) || pinCalls[0].PinChatMessageParams.MessageID != 101 {
+		t.Fatalf("pin calls = %#v, want message 101", pinCalls)
 	}
 }
 
 func TestRunnerSendsPlainTextMessage(t *testing.T) {
-	client := &fakeClient{
-		sentMessage: &models.Message{ID: 102},
-	}
+	client := &MoqClient{SendMessageFunc: func(_ context.Context, _ *tgbot.SendMessageParams) (*models.Message, error) {
+		return &models.Message{ID: 102}, nil
+	}}
 	runner := NewWithClient(client)
 
 	messageID, err := runner.SendText(context.Background(), -1001, "plain_text")
@@ -125,59 +139,8 @@ func TestRunnerSendsPlainTextMessage(t *testing.T) {
 	if messageID != 102 {
 		t.Fatalf("messageID = %d, want 102", messageID)
 	}
-	if client.sendParams.ParseMode != "" {
-		t.Fatalf("ParseMode = %q, want empty", client.sendParams.ParseMode)
+	sendCalls := client.SendMessageCalls()
+	if sendCalls[0].SendMessageParams.ParseMode != "" {
+		t.Fatalf("ParseMode = %q, want empty", sendCalls[0].SendMessageParams.ParseMode)
 	}
-}
-
-type fakeClient struct {
-	me           *models.User
-	err          error
-	sentMessage  *models.Message
-	sentPhoto    *models.Message
-	sendParams   *tgbot.SendMessageParams
-	photoParams  *tgbot.SendPhotoParams
-	editParams   *tgbot.EditMessageMediaParams
-	answerOK     bool
-	answerParams *tgbot.AnswerCallbackQueryParams
-	pinOK        bool
-	pinParams    *tgbot.PinChatMessageParams
-	getMeCalled  bool
-	getMeCalls   int
-	startCalled  bool
-}
-
-func (c *fakeClient) GetMe(context.Context) (*models.User, error) {
-	c.getMeCalled = true
-	c.getMeCalls++
-	return c.me, c.err
-}
-
-func (c *fakeClient) SendMessage(_ context.Context, params *tgbot.SendMessageParams) (*models.Message, error) {
-	c.sendParams = params
-	return c.sentMessage, c.err
-}
-
-func (c *fakeClient) SendPhoto(_ context.Context, params *tgbot.SendPhotoParams) (*models.Message, error) {
-	c.photoParams = params
-	return c.sentPhoto, c.err
-}
-
-func (c *fakeClient) EditMessageMedia(_ context.Context, params *tgbot.EditMessageMediaParams) (*models.Message, error) {
-	c.editParams = params
-	return &models.Message{ID: params.MessageID}, c.err
-}
-
-func (c *fakeClient) AnswerCallbackQuery(_ context.Context, params *tgbot.AnswerCallbackQueryParams) (bool, error) {
-	c.answerParams = params
-	return c.answerOK, c.err
-}
-
-func (c *fakeClient) PinChatMessage(_ context.Context, params *tgbot.PinChatMessageParams) (bool, error) {
-	c.pinParams = params
-	return c.pinOK, c.err
-}
-
-func (c *fakeClient) Start(context.Context) {
-	c.startCalled = true
 }

@@ -11,7 +11,7 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-type Client interface {
+type client interface {
 	GetMe(context.Context) (*models.User, error)
 	SendMessage(context.Context, *tgbot.SendMessageParams) (*models.Message, error)
 	SendPhoto(context.Context, *tgbot.SendPhotoParams) (*models.Message, error)
@@ -22,7 +22,7 @@ type Client interface {
 }
 
 type Runner struct {
-	client   Client
+	client   client
 	mu       sync.RWMutex
 	username string
 }
@@ -43,7 +43,7 @@ func New(token string, handler tgbot.HandlerFunc, options ...tgbot.Option) (*Run
 	return NewWithClient(client), nil
 }
 
-func NewWithClient(client Client) *Runner {
+func NewWithClient(client client) *Runner {
 	require.NotNil("telegram client", client)
 	return &Runner{client: client}
 }

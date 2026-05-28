@@ -22,7 +22,7 @@ const (
 	reminderText = "Напоминалка: завтра последний день челленджа! Присылайте фотографии, если еще не сделали этого."
 )
 
-type Challenges interface {
+type challenges interface {
 	ListDueReminders(context.Context, int64, time.Time, int) ([]repository.Challenge, error)
 	ClaimReminder(context.Context, int64, time.Time) (bool, error)
 	MarkReminderSent(context.Context, int64, int, time.Time, time.Time) (bool, error)
@@ -40,35 +40,35 @@ type Challenges interface {
 	FinishVoting(context.Context, int64, time.Time) (bool, error)
 }
 
-type Publisher interface {
+type publisher interface {
 	SendMarkdown(context.Context, int64, string) (int, error)
 	Pin(context.Context, int64, int) error
 }
 
-type PhotoCounter interface {
+type photoCounter interface {
 	CountByChallenge(context.Context, int64) (int, error)
 }
 
-type VoteStartRenderer interface {
+type voteStartRenderer interface {
 	VoteStart(templates.VoteStartData) (string, error)
 }
 
-type ResultsPublisher interface {
+type resultsPublisher interface {
 	PublishDue(context.Context, int64, int) error
 }
 
-type TopicReporter interface {
+type topicReporter interface {
 	PublishDue(context.Context, int64, int) error
 }
 
 type Config struct {
 	MainChatID         int64
-	Challenges         Challenges
-	Photos             PhotoCounter
-	Renderer           VoteStartRenderer
-	Results            ResultsPublisher
-	Topics             TopicReporter
-	Publisher          Publisher
+	Challenges         challenges
+	Photos             photoCounter
+	Renderer           voteStartRenderer
+	Results            resultsPublisher
+	Topics             topicReporter
+	Publisher          publisher
 	Logger             *slog.Logger
 	Now                func() time.Time
 	BotUsername        func() string
@@ -80,12 +80,12 @@ type Config struct {
 }
 
 type Scheduler struct {
-	challenges  Challenges
-	photos      PhotoCounter
-	renderer    VoteStartRenderer
-	results     ResultsPublisher
-	topics      TopicReporter
-	publisher   Publisher
+	challenges  challenges
+	photos      photoCounter
+	renderer    voteStartRenderer
+	results     resultsPublisher
+	topics      topicReporter
+	publisher   publisher
 	logger      *slog.Logger
 	now         func() time.Time
 	botUsername func() string

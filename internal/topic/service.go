@@ -12,31 +12,31 @@ import (
 
 const themeSuggestionHashtag = "#тема"
 
-type Challenges interface {
+type challenges interface {
 	FindOpenByMainChatID(context.Context, int64) (*repository.Challenge, error)
 }
 
-type Users interface {
+type users interface {
 	Upsert(context.Context, repository.User) (repository.User, error)
 }
 
-type Suggestions interface {
+type suggestions interface {
 	Create(context.Context, repository.CreateTopicSuggestionInput) (repository.TopicSuggestion, bool, error)
 }
 
 type Config struct {
 	MainChatID  int64
-	Challenges  Challenges
-	Users       Users
-	Suggestions Suggestions
+	Challenges  challenges
+	Users       users
+	Suggestions suggestions
 	Now         func() time.Time
 }
 
 type Service struct {
 	mainChatID  int64
-	challenges  Challenges
-	users       Users
-	suggestions Suggestions
+	challenges  challenges
+	users       users
+	suggestions suggestions
 	now         func() time.Time
 }
 

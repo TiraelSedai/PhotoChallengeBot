@@ -12,34 +12,34 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-type OpenChallengeFinder interface {
+type openChallengeFinder interface {
 	FindOpenByMainChatID(context.Context, int64) (*repository.Challenge, error)
 }
 
-type PhotoDeleter interface {
+type photoDeleter interface {
 	DeleteByAuthorID(context.Context, int64, int64) (*repository.Photo, error)
 	DeleteByUsername(context.Context, int64, string) (*repository.Photo, error)
 }
 
-type DeletePhotoPublisher interface {
+type deletePhotoPublisher interface {
 	SendText(context.Context, int64, string) (int, error)
 }
 
 type DeletePhotoHandler struct {
 	adminChatID int64
 	mainChatID  int64
-	challenges  OpenChallengeFinder
-	photos      PhotoDeleter
-	publisher   DeletePhotoPublisher
+	challenges  openChallengeFinder
+	photos      photoDeleter
+	publisher   deletePhotoPublisher
 	botUsername func() string
 }
 
 type DeletePhotoConfig struct {
 	AdminChatID int64
 	MainChatID  int64
-	Challenges  OpenChallengeFinder
-	Photos      PhotoDeleter
-	Publisher   DeletePhotoPublisher
+	Challenges  openChallengeFinder
+	Photos      photoDeleter
+	Publisher   deletePhotoPublisher
 	BotUsername func() string
 }
 

@@ -19,30 +19,30 @@ const (
 	finishVoteTopicsPublishFailedMessage = "Голосование завершено, но темы не удалось отправить в админку автоматически. Планировщик попробует еще раз."
 )
 
-type FinishVoteChallenges interface {
+type finishVoteChallenges interface {
 	FindOpenByMainChatID(context.Context, int64) (*repository.Challenge, error)
 	FinishVotingNow(context.Context, int64, time.Time) (bool, error)
 }
 
-type FinishVotePublisher interface {
+type finishVotePublisher interface {
 	SendText(context.Context, int64, string) (int, error)
 }
 
-type FinishVoteResults interface {
+type finishVoteResults interface {
 	PublishOne(context.Context, int64) error
 }
 
-type FinishVoteTopics interface {
+type finishVoteTopics interface {
 	PublishOne(context.Context, repository.Challenge) error
 }
 
 type FinishVoteConfig struct {
 	AdminChatID int64
 	MainChatID  int64
-	Challenges  FinishVoteChallenges
-	Publisher   FinishVotePublisher
-	Results     FinishVoteResults
-	Topics      FinishVoteTopics
+	Challenges  finishVoteChallenges
+	Publisher   finishVotePublisher
+	Results     finishVoteResults
+	Topics      finishVoteTopics
 	BotUsername func() string
 	Now         func() time.Time
 }
@@ -50,10 +50,10 @@ type FinishVoteConfig struct {
 type FinishVoteHandler struct {
 	adminChatID int64
 	mainChatID  int64
-	challenges  FinishVoteChallenges
-	publisher   FinishVotePublisher
-	results     FinishVoteResults
-	topics      FinishVoteTopics
+	challenges  finishVoteChallenges
+	publisher   finishVotePublisher
+	results     finishVoteResults
+	topics      finishVoteTopics
 	botUsername func() string
 	now         func() time.Time
 }

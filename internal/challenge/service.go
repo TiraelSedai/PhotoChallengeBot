@@ -15,14 +15,14 @@ const (
 	reminderBefore      = 30 * time.Hour
 )
 
-type Store interface {
+type store interface {
 	Create(context.Context, repository.CreateChallengeInput) (repository.Challenge, error)
 	FindOpenByMainChatID(context.Context, int64) (*repository.Challenge, error)
 	NextNum(context.Context, int64) (int, error)
 }
 
 type Service struct {
-	store    Store
+	store    store
 	location *time.Location
 	now      func() time.Time
 }
@@ -45,7 +45,7 @@ type Plan struct {
 	CreatedAt     time.Time
 }
 
-func NewService(store Store, location *time.Location, now func() time.Time) *Service {
+func NewService(store store, location *time.Location, now func() time.Time) *Service {
 	require.NotNil("challenge store", store)
 	require.NotNil("location", location)
 	require.NotNil("clock", now)

@@ -15,10 +15,17 @@ func TestFinishVoteHandlerFinishesVotingAndPublishesResults(t *testing.T) {
 		MainChatID: -1001,
 		State:      repository.ChallengeStateVoting,
 	}
-	challenges := &finishVoteChallenges{open: &challenge, finishResult: true}
-	publisher := &finishVotePublisher{}
-	results := &finishVoteResults{}
-	topics := &finishVoteTopics{}
+	challenges := &MoqFinishVoteChallenges{
+		FindOpenByMainChatIDFunc: func(context.Context, int64) (*repository.Challenge, error) {
+			return &challenge, nil
+		},
+		FinishVotingNowFunc: func(context.Context, int64, time.Time) (bool, error) {
+			return true, nil
+		},
+	}
+	publisher := &MoqFinishVotePublisher{}
+	results := &MoqFinishVoteResults{}
+	topics := &MoqFinishVoteTopics{}
 	handler := NewFinishVoteHandler(FinishVoteConfig{
 		AdminChatID: -2002,
 		MainChatID:  -1001,
@@ -34,16 +41,19 @@ func TestFinishVoteHandlerFinishesVotingAndPublishesResults(t *testing.T) {
 		t.Fatalf("HandleAdminChatMessage() error = %v", err)
 	}
 
-	if challenges.finishedID != 42 {
-		t.Fatalf("finishedID = %d, want 42", challenges.finishedID)
+	finishCalls := challenges.FinishVotingNowCalls()
+	if len(finishCalls) != 1 || finishCalls[0].N != 42 {
+		t.Fatalf("FinishVotingNow calls = %#v, want challenge 42", finishCalls)
 	}
-	if results.challengeID != 42 {
-		t.Fatalf("published challengeID = %d, want 42", results.challengeID)
+	publishCalls := results.PublishOneCalls()
+	if len(publishCalls) != 1 || publishCalls[0].N != 42 {
+		t.Fatalf("PublishOne calls = %#v, want challenge 42", publishCalls)
 	}
-	if topics.challenge.ID != 42 || topics.challenge.State != repository.ChallengeStateFinished {
-		t.Fatalf("topic report challenge = %#v, want finished challenge 42", topics.challenge)
+	topicCalls := topics.PublishOneCalls()
+	if len(topicCalls) != 1 || topicCalls[0].Challenge.ID != 42 || topicCalls[0].Challenge.State != repository.ChallengeStateFinished {
+		t.Fatalf("topic PublishOne calls = %#v, want finished challenge 42", topicCalls)
 	}
-	if got := publisher.sent[0]; got != finishVoteDoneMessage {
+	if got := publisher.SendTextCalls()[0].S; got != finishVoteDoneMessage {
 		t.Fatalf("sent = %q, want done message", got)
 	}
 }
@@ -57,25 +67,29 @@ func TestNewFinishVoteHandlerPanicsOnNilTopics(t *testing.T) {
 	NewFinishVoteHandler(FinishVoteConfig{
 		AdminChatID: -2002,
 		MainChatID:  -1001,
-		Challenges:  &finishVoteChallenges{},
-		Publisher:   &finishVotePublisher{},
-		Results:     &finishVoteResults{},
+		Challenges:  &MoqFinishVoteChallenges{},
+		Publisher:   &MoqFinishVotePublisher{},
+		Results:     &MoqFinishVoteResults{},
 		BotUsername: func() string { return "PhotoChallengeBot" },
 		Now:         func() time.Time { return time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC) },
 	})
 }
 
 func TestFinishVoteHandlerReportsAbsentVoting(t *testing.T) {
-	challenges := &finishVoteChallenges{open: &repository.Challenge{ID: 42, State: repository.ChallengeStateActive}}
-	publisher := &finishVotePublisher{}
-	results := &finishVoteResults{}
+	challenges := &MoqFinishVoteChallenges{
+		FindOpenByMainChatIDFunc: func(context.Context, int64) (*repository.Challenge, error) {
+			return &repository.Challenge{ID: 42, State: repository.ChallengeStateActive}, nil
+		},
+	}
+	publisher := &MoqFinishVotePublisher{}
+	results := &MoqFinishVoteResults{}
 	handler := NewFinishVoteHandler(FinishVoteConfig{
 		AdminChatID: -2002,
 		MainChatID:  -1001,
 		Challenges:  challenges,
 		Publisher:   publisher,
 		Results:     results,
-		Topics:      &finishVoteTopics{},
+		Topics:      &MoqFinishVoteTopics{},
 		BotUsername: func() string { return "PhotoChallengeBot" },
 		Now:         func() time.Time { return time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC) },
 	})
@@ -83,13 +97,13 @@ func TestFinishVoteHandlerReportsAbsentVoting(t *testing.T) {
 	if err := handler.HandleAdminChatMessage(context.Background(), adminMessage("/finish_vote")); err != nil {
 		t.Fatalf("HandleAdminChatMessage() error = %v", err)
 	}
-	if challenges.finishedID != 0 {
-		t.Fatalf("finishedID = %d, want 0", challenges.finishedID)
+	if len(challenges.FinishVotingNowCalls()) != 0 {
+		t.Fatalf("FinishVotingNow calls = %#v, want none", challenges.FinishVotingNowCalls())
 	}
-	if results.challengeID != 0 {
-		t.Fatalf("published challengeID = %d, want 0", results.challengeID)
+	if len(results.PublishOneCalls()) != 0 {
+		t.Fatalf("PublishOne calls = %#v, want none", results.PublishOneCalls())
 	}
-	if got := publisher.sent[0]; got != finishVoteAbsentMessage {
+	if got := publisher.SendTextCalls()[0].S; got != finishVoteAbsentMessage {
 		t.Fatalf("sent = %q, want absent message", got)
 	}
 }
@@ -100,16 +114,20 @@ func TestFinishVoteHandlerDoesNotPublishWhenFinishDoesNotChangeRow(t *testing.T)
 		MainChatID: -1001,
 		State:      repository.ChallengeStateVoting,
 	}
-	challenges := &finishVoteChallenges{open: &challenge, finishResult: false}
-	publisher := &finishVotePublisher{}
-	results := &finishVoteResults{}
+	challenges := &MoqFinishVoteChallenges{
+		FindOpenByMainChatIDFunc: func(context.Context, int64) (*repository.Challenge, error) {
+			return &challenge, nil
+		},
+	}
+	publisher := &MoqFinishVotePublisher{}
+	results := &MoqFinishVoteResults{}
 	handler := NewFinishVoteHandler(FinishVoteConfig{
 		AdminChatID: -2002,
 		MainChatID:  -1001,
 		Challenges:  challenges,
 		Publisher:   publisher,
 		Results:     results,
-		Topics:      &finishVoteTopics{},
+		Topics:      &MoqFinishVoteTopics{},
 		BotUsername: func() string { return "PhotoChallengeBot" },
 		Now:         func() time.Time { return time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC) },
 	})
@@ -117,10 +135,10 @@ func TestFinishVoteHandlerDoesNotPublishWhenFinishDoesNotChangeRow(t *testing.T)
 	if err := handler.HandleAdminChatMessage(context.Background(), adminMessage("/finish_vote")); err != nil {
 		t.Fatalf("HandleAdminChatMessage() error = %v", err)
 	}
-	if results.challengeID != 0 {
-		t.Fatalf("published challengeID = %d, want 0", results.challengeID)
+	if len(results.PublishOneCalls()) != 0 {
+		t.Fatalf("PublishOne calls = %#v, want none", results.PublishOneCalls())
 	}
-	if got := publisher.sent[0]; got != finishVoteAbsentMessage {
+	if got := publisher.SendTextCalls()[0].S; got != finishVoteAbsentMessage {
 		t.Fatalf("sent = %q, want absent message", got)
 	}
 }
@@ -132,16 +150,25 @@ func TestFinishVoteHandlerReportsPublishFailureToAdmin(t *testing.T) {
 		MainChatID: -1001,
 		State:      repository.ChallengeStateVoting,
 	}
-	challenges := &finishVoteChallenges{open: &challenge, finishResult: true}
-	publisher := &finishVotePublisher{}
-	results := &finishVoteResults{err: wantErr}
+	challenges := &MoqFinishVoteChallenges{
+		FindOpenByMainChatIDFunc: func(context.Context, int64) (*repository.Challenge, error) {
+			return &challenge, nil
+		},
+		FinishVotingNowFunc: func(context.Context, int64, time.Time) (bool, error) {
+			return true, nil
+		},
+	}
+	publisher := &MoqFinishVotePublisher{}
+	results := &MoqFinishVoteResults{PublishOneFunc: func(context.Context, int64) error {
+		return wantErr
+	}}
 	handler := NewFinishVoteHandler(FinishVoteConfig{
 		AdminChatID: -2002,
 		MainChatID:  -1001,
 		Challenges:  challenges,
 		Publisher:   publisher,
 		Results:     results,
-		Topics:      &finishVoteTopics{},
+		Topics:      &MoqFinishVoteTopics{},
 		BotUsername: func() string { return "PhotoChallengeBot" },
 		Now:         func() time.Time { return time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC) },
 	})
@@ -150,11 +177,13 @@ func TestFinishVoteHandlerReportsPublishFailureToAdmin(t *testing.T) {
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("HandleAdminChatMessage() error = %v, want %v", err, wantErr)
 	}
-	if challenges.finishedID != 42 {
-		t.Fatalf("finishedID = %d, want 42", challenges.finishedID)
+	finishCalls := challenges.FinishVotingNowCalls()
+	if len(finishCalls) != 1 || finishCalls[0].N != 42 {
+		t.Fatalf("FinishVotingNow calls = %#v, want challenge 42", finishCalls)
 	}
-	if len(publisher.sent) != 1 || publisher.sent[0] != finishVotePublishFailedMessage {
-		t.Fatalf("sent = %#v, want publish failure message", publisher.sent)
+	sendCalls := publisher.SendTextCalls()
+	if len(sendCalls) != 1 || sendCalls[0].S != finishVotePublishFailedMessage {
+		t.Fatalf("SendText calls = %#v, want publish failure message", sendCalls)
 	}
 }
 
@@ -165,10 +194,19 @@ func TestFinishVoteHandlerReportsTopicFailureAndStillPublishesResults(t *testing
 		MainChatID: -1001,
 		State:      repository.ChallengeStateVoting,
 	}
-	challenges := &finishVoteChallenges{open: &challenge, finishResult: true}
-	publisher := &finishVotePublisher{}
-	results := &finishVoteResults{}
-	topics := &finishVoteTopics{err: wantErr}
+	challenges := &MoqFinishVoteChallenges{
+		FindOpenByMainChatIDFunc: func(context.Context, int64) (*repository.Challenge, error) {
+			return &challenge, nil
+		},
+		FinishVotingNowFunc: func(context.Context, int64, time.Time) (bool, error) {
+			return true, nil
+		},
+	}
+	publisher := &MoqFinishVotePublisher{}
+	results := &MoqFinishVoteResults{}
+	topics := &MoqFinishVoteTopics{PublishOneFunc: func(context.Context, repository.Challenge) error {
+		return wantErr
+	}}
 	handler := NewFinishVoteHandler(FinishVoteConfig{
 		AdminChatID: -2002,
 		MainChatID:  -1001,
@@ -184,59 +222,14 @@ func TestFinishVoteHandlerReportsTopicFailureAndStillPublishesResults(t *testing
 	if !errors.Is(err, wantErr) {
 		t.Fatalf("HandleAdminChatMessage() error = %v, want %v", err, wantErr)
 	}
-	if results.challengeID != 42 {
-		t.Fatalf("published challengeID = %d, want 42", results.challengeID)
+	publishCalls := results.PublishOneCalls()
+	if len(publishCalls) != 1 || publishCalls[0].N != 42 {
+		t.Fatalf("PublishOne calls = %#v, want challenge 42", publishCalls)
 	}
-	if len(publisher.sent) != 2 ||
-		publisher.sent[0] != finishVoteTopicsPublishFailedMessage ||
-		publisher.sent[1] != finishVoteDoneMessage {
-		t.Fatalf("sent = %#v, want topic failure then done message", publisher.sent)
+	sendCalls := publisher.SendTextCalls()
+	if len(sendCalls) != 2 ||
+		sendCalls[0].S != finishVoteTopicsPublishFailedMessage ||
+		sendCalls[1].S != finishVoteDoneMessage {
+		t.Fatalf("SendText calls = %#v, want topic failure then done message", sendCalls)
 	}
-}
-
-type finishVoteChallenges struct {
-	open         *repository.Challenge
-	finishedID   int64
-	finishResult bool
-}
-
-func (s *finishVoteChallenges) FindOpenByMainChatID(context.Context, int64) (*repository.Challenge, error) {
-	return s.open, nil
-}
-
-func (s *finishVoteChallenges) FinishVotingNow(_ context.Context, id int64, _ time.Time) (bool, error) {
-	s.finishedID = id
-	if !s.finishResult {
-		return false, nil
-	}
-	return true, nil
-}
-
-type finishVotePublisher struct {
-	sent []string
-}
-
-func (p *finishVotePublisher) SendText(_ context.Context, _ int64, text string) (int, error) {
-	p.sent = append(p.sent, text)
-	return len(p.sent), nil
-}
-
-type finishVoteResults struct {
-	challengeID int64
-	err         error
-}
-
-func (p *finishVoteResults) PublishOne(_ context.Context, challengeID int64) error {
-	p.challengeID = challengeID
-	return p.err
-}
-
-type finishVoteTopics struct {
-	challenge repository.Challenge
-	err       error
-}
-
-func (p *finishVoteTopics) PublishOne(_ context.Context, challenge repository.Challenge) error {
-	p.challenge = challenge
-	return p.err
 }

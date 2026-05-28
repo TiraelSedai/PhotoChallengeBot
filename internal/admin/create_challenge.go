@@ -23,32 +23,32 @@ const (
 	stepApprove         = "approve"
 )
 
-type SessionStore interface {
+type sessionStore interface {
 	Get(context.Context, int64, int64) (*repository.AdminSession, error)
 	Upsert(context.Context, repository.AdminSession) (repository.AdminSession, error)
 	Clear(context.Context, int64, int64) error
 }
 
-type UserStore interface {
+type userStore interface {
 	Upsert(context.Context, repository.User) (repository.User, error)
 }
 
-type ChallengePlanner interface {
+type challengePlanner interface {
 	Plan(context.Context, challenge.CreateInput) (challenge.Plan, error)
 	CreateActive(context.Context, challenge.CreateInput) (repository.Challenge, error)
 	CreatePlanned(context.Context, challenge.Plan) (repository.Challenge, error)
 }
 
-type ChallengeAnnouncements interface {
+type challengeAnnouncements interface {
 	Get(context.Context, int64) (repository.Challenge, error)
 	SetAnnouncementMessageID(context.Context, int64, int, time.Time) error
 }
 
-type AnnouncementRenderer interface {
+type announcementRenderer interface {
 	ChallengeAnnouncement(templates.ChallengeAnnouncementData) (string, error)
 }
 
-type Publisher interface {
+type createChallengePublisher interface {
 	SendMarkdown(context.Context, int64, string) (int, error)
 	SendText(context.Context, int64, string) (int, error)
 	Pin(context.Context, int64, int) error
@@ -58,12 +58,12 @@ type CreateChallengeHandler struct {
 	adminChatID   int64
 	mainChatID    int64
 	location      *time.Location
-	sessions      SessionStore
-	users         UserStore
-	challenges    ChallengePlanner
-	announcements ChallengeAnnouncements
-	renderer      AnnouncementRenderer
-	publisher     Publisher
+	sessions      sessionStore
+	users         userStore
+	challenges    challengePlanner
+	announcements challengeAnnouncements
+	renderer      announcementRenderer
+	publisher     createChallengePublisher
 	botUsername   func() string
 }
 
@@ -71,12 +71,12 @@ type CreateChallengeConfig struct {
 	AdminChatID   int64
 	MainChatID    int64
 	Location      *time.Location
-	Sessions      SessionStore
-	Users         UserStore
-	Challenges    ChallengePlanner
-	Announcements ChallengeAnnouncements
-	Renderer      AnnouncementRenderer
-	Publisher     Publisher
+	Sessions      sessionStore
+	Users         userStore
+	Challenges    challengePlanner
+	Announcements challengeAnnouncements
+	Renderer      announcementRenderer
+	Publisher     createChallengePublisher
 	BotUsername   func() string
 }
 

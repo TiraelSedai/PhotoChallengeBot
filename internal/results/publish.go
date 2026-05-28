@@ -21,7 +21,7 @@ var achievementMilestones = map[int]struct{}{
 
 const defaultSendTimeout = 10 * time.Second
 
-type ChallengeStore interface {
+type challengeStore interface {
 	Get(context.Context, int64) (repository.Challenge, error)
 	ListUnpublishedResults(context.Context, int64, int) ([]repository.Challenge, error)
 	ClaimResults(context.Context, int64, time.Time) (bool, error)
@@ -37,47 +37,47 @@ type ChallengeStore interface {
 	ReleaseAchievementsClaim(context.Context, int64, time.Time) error
 }
 
-type PhotoStore interface {
+type photoStore interface {
 	ListByChallenge(context.Context, int64) ([]repository.Photo, error)
 }
 
-type VoteStore interface {
+type voteStore interface {
 	ListVotes(context.Context, int64) ([]repository.Vote, error)
 	CountFinishedWinsByAuthorThrough(context.Context, int64, time.Time, int64) (int, error)
 }
 
-type UserStore interface {
+type userStore interface {
 	Get(context.Context, int64) (repository.User, error)
 }
 
-type Renderer interface {
+type renderer interface {
 	Results(templates.ResultsData) (string, error)
 }
 
-type Publisher interface {
+type publisher interface {
 	SendMarkdown(context.Context, int64, string) (int, error)
 	SendText(context.Context, int64, string) (int, error)
 	Pin(context.Context, int64, int) error
 }
 
 type PublisherService struct {
-	challenges ChallengeStore
-	photos     PhotoStore
-	votes      VoteStore
-	users      UserStore
-	renderer   Renderer
-	publisher  Publisher
+	challenges challengeStore
+	photos     photoStore
+	votes      voteStore
+	users      userStore
+	renderer   renderer
+	publisher  publisher
 	now        func() time.Time
 	sendFor    time.Duration
 }
 
 type PublishConfig struct {
-	Challenges  ChallengeStore
-	Photos      PhotoStore
-	Votes       VoteStore
-	Users       UserStore
-	Renderer    Renderer
-	Publisher   Publisher
+	Challenges  challengeStore
+	Photos      photoStore
+	Votes       voteStore
+	Users       userStore
+	Renderer    renderer
+	Publisher   publisher
 	Now         func() time.Time
 	SendTimeout time.Duration
 }

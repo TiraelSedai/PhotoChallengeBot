@@ -18,31 +18,31 @@ const (
 	truncatedSuffix          = "..."
 )
 
-type ReportChallenges interface {
+type reportChallenges interface {
 	ListUnsentTopicReports(context.Context, int64, int) ([]repository.Challenge, error)
 	ClaimTopicReport(context.Context, int64, time.Time) (bool, error)
 	MarkTopicReportSent(context.Context, int64, time.Time, time.Time) (bool, error)
 	ReleaseTopicReportClaim(context.Context, int64, time.Time) error
 }
 
-type ReportSuggestions interface {
+type reportSuggestions interface {
 	ListByChallenge(context.Context, int64) ([]repository.TopicSuggestion, error)
 }
 
-type ReportUsers interface {
+type reportUsers interface {
 	Get(context.Context, int64) (repository.User, error)
 }
 
-type ReportPublisher interface {
+type reportPublisher interface {
 	SendText(context.Context, int64, string) (int, error)
 }
 
 type ReportConfig struct {
 	AdminChatID        int64
-	Challenges         ReportChallenges
-	Suggestions        ReportSuggestions
-	Users              ReportUsers
-	Publisher          ReportPublisher
+	Challenges         reportChallenges
+	Suggestions        reportSuggestions
+	Users              reportUsers
+	Publisher          reportPublisher
 	Now                func() time.Time
 	SendTimeout        time.Duration
 	PersistenceTimeout time.Duration
@@ -50,10 +50,10 @@ type ReportConfig struct {
 
 type Reporter struct {
 	adminChatID int64
-	challenges  ReportChallenges
-	suggestions ReportSuggestions
-	users       ReportUsers
-	publisher   ReportPublisher
+	challenges  reportChallenges
+	suggestions reportSuggestions
+	users       reportUsers
+	publisher   reportPublisher
 	now         func() time.Time
 	sendFor     time.Duration
 	persistFor  time.Duration

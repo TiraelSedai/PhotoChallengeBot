@@ -19,7 +19,7 @@ func TestHandlePrivateStartCreatesAndReusesVoteOrder(t *testing.T) {
 	database := openVoteTestDB(t)
 	defer database.Close()
 	challengeID := createVotingChallenge(t, database, 11, 12)
-	publisher := &recordingPublisher{}
+	publisher := newVotePublisherDeps(nil)
 	service := newVoteTestService(database, publisher)
 
 	message := privateStartMessage(20, "/start "+voteStartToken(t, database, challengeID))
@@ -64,7 +64,7 @@ func TestNewServicePanicsOnNilRand(t *testing.T) {
 		Users:      repository.NewUsers(database),
 		Photos:     repository.NewPhotos(database),
 		Votes:      repository.NewVotes(database),
-		Publisher:  &recordingPublisher{},
+		Publisher:  newVotePublisherDeps(nil).mock,
 		Now:        func() time.Time { return testVoteTime(19 * 24 * time.Hour) },
 	})
 }
@@ -76,7 +76,7 @@ func TestHandlePrivateStartRejectsInvalidOrFinishedToken(t *testing.T) {
 	if _, err := repository.NewChallenges(database).FinishVoting(context.Background(), challengeID, testVoteTime(21*24*time.Hour)); err != nil {
 		t.Fatalf("finish voting: %v", err)
 	}
-	publisher := &recordingPublisher{}
+	publisher := newVotePublisherDeps(nil)
 	service := newVoteTestService(database, publisher)
 
 	if err := service.HandlePrivateStart(context.Background(), privateStartMessage(20, "/start bad"), "bad"); err != nil {
@@ -98,7 +98,7 @@ func TestHandlePrivateStartAcceptsIDOnlyToken(t *testing.T) {
 	database := openVoteTestDB(t)
 	defer database.Close()
 	challengeID := createVotingChallenge(t, database, 11)
-	publisher := &recordingPublisher{}
+	publisher := newVotePublisherDeps(nil)
 	service := newVoteTestService(database, publisher)
 
 	token := "-1001_" + itoa(challengeID)
@@ -116,7 +116,7 @@ func TestHandlePrivateStartAcceptsIDOnlyToken(t *testing.T) {
 func TestHandlePrivateStartReturnsUnexpectedBackendErrorAfterNotifyingUser(t *testing.T) {
 	database := openVoteTestDB(t)
 	challengeID := createVotingChallenge(t, database, 11)
-	publisher := &recordingPublisher{}
+	publisher := newVotePublisherDeps(nil)
 	service := newVoteTestService(database, publisher)
 	if err := database.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
@@ -136,7 +136,7 @@ func TestHandleCallbackNavigatesAndTogglesManualVote(t *testing.T) {
 	database := openVoteTestDB(t)
 	defer database.Close()
 	challengeID := createVotingChallenge(t, database, 11, 12)
-	publisher := &recordingPublisher{}
+	publisher := newVotePublisherDeps(nil)
 	service := newVoteTestService(database, publisher)
 	ctx := context.Background()
 
@@ -183,7 +183,7 @@ func TestHandleCallbackNavigatesAndTogglesManualVote(t *testing.T) {
 func TestHandleCallbackReturnsUnexpectedBackendErrorAfterAnswering(t *testing.T) {
 	database := openVoteTestDB(t)
 	challengeID := createVotingChallenge(t, database, 11)
-	publisher := &recordingPublisher{}
+	publisher := newVotePublisherDeps(nil)
 	service := newVoteTestService(database, publisher)
 	if err := database.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
@@ -202,7 +202,7 @@ func TestHandleCallbackLikesPhotoFromClickedMessageNotPersistedProgress(t *testi
 	database := openVoteTestDB(t)
 	defer database.Close()
 	challengeID := createVotingChallenge(t, database, 11, 12)
-	publisher := &recordingPublisher{}
+	publisher := newVotePublisherDeps(nil)
 	service := newVoteTestService(database, publisher)
 	ctx := context.Background()
 
@@ -238,7 +238,7 @@ func TestHandleCallbackNavigatesLiveOrderAfterPhotoDeletion(t *testing.T) {
 	database := openVoteTestDB(t)
 	defer database.Close()
 	challengeID := createVotingChallenge(t, database, 11, 12, 13)
-	publisher := &recordingPublisher{}
+	publisher := newVotePublisherDeps(nil)
 	service := newVoteTestService(database, publisher)
 	ctx := context.Background()
 
@@ -280,7 +280,7 @@ func TestHandleCallbackRejectsNonPrivateChat(t *testing.T) {
 	database := openVoteTestDB(t)
 	defer database.Close()
 	challengeID := createVotingChallenge(t, database, 11, 12)
-	publisher := &recordingPublisher{}
+	publisher := newVotePublisherDeps(nil)
 	service := newVoteTestService(database, publisher)
 	ctx := context.Background()
 
@@ -316,7 +316,7 @@ func TestHandleCallbackKeepsManualVoteWhenEditFails(t *testing.T) {
 	database := openVoteTestDB(t)
 	defer database.Close()
 	challengeID := createVotingChallenge(t, database, 11, 12)
-	publisher := &recordingPublisher{editErr: errors.New("telegram edit failed")}
+	publisher := newVotePublisherDeps(errors.New("telegram edit failed"))
 	service := newVoteTestService(database, publisher)
 	ctx := context.Background()
 
@@ -348,7 +348,7 @@ func TestHandleCallbackKeepsProgressWhenEditFails(t *testing.T) {
 	database := openVoteTestDB(t)
 	defer database.Close()
 	challengeID := createVotingChallenge(t, database, 11, 12)
-	publisher := &recordingPublisher{editErr: errors.New("telegram edit failed")}
+	publisher := newVotePublisherDeps(errors.New("telegram edit failed"))
 	service := newVoteTestService(database, publisher)
 	ctx := context.Background()
 
@@ -380,7 +380,7 @@ func TestHandleCallbackRejectsSelfManualVote(t *testing.T) {
 	database := openVoteTestDB(t)
 	defer database.Close()
 	challengeID := createVotingChallenge(t, database, 11)
-	publisher := &recordingPublisher{}
+	publisher := newVotePublisherDeps(nil)
 	service := newVoteTestService(database, publisher)
 	ctx := context.Background()
 
@@ -413,7 +413,7 @@ func TestHandleCallbackAnswersSelfVoteWithoutEditingUnchangedMessage(t *testing.
 	database := openVoteTestDB(t)
 	defer database.Close()
 	challengeID := createVotingChallenge(t, database, 11)
-	publisher := &recordingPublisher{editErr: errors.New("message is not modified")}
+	publisher := newVotePublisherDeps(errors.New("message is not modified"))
 	service := newVoteTestService(database, publisher)
 	ctx := context.Background()
 
@@ -501,13 +501,13 @@ func voteStartToken(t *testing.T, database *sqlx.DB, challengeID int64) string {
 	return "-1001_" + itoa(challengeID)
 }
 
-func newVoteTestService(database *sqlx.DB, publisher *recordingPublisher) *Service {
+func newVoteTestService(database *sqlx.DB, publisher *votePublisherDeps) *Service {
 	return NewService(Config{
 		Challenges: repository.NewChallenges(database),
 		Users:      repository.NewUsers(database),
 		Photos:     repository.NewPhotos(database),
 		Votes:      repository.NewVotes(database),
-		Publisher:  publisher,
+		Publisher:  publisher.mock,
 		Now:        func() time.Time { return testVoteTime(19 * 24 * time.Hour) },
 		Rand:       rand.New(rand.NewSource(1)),
 	})
@@ -536,7 +536,8 @@ func voteCallback(userID int64, id string, data string) *models.CallbackQuery {
 	}
 }
 
-type recordingPublisher struct {
+type votePublisherDeps struct {
+	mock    *MoqPublisher
 	photos  []photoCall
 	edits   []photoCall
 	texts   []textCall
@@ -562,27 +563,30 @@ type answerCall struct {
 	text string
 }
 
-func (p *recordingPublisher) SendPhoto(_ context.Context, chatID int64, fileID string, caption string, markup *models.InlineKeyboardMarkup) (int, error) {
-	p.photos = append(p.photos, photoCall{chatID: chatID, messageID: len(p.photos) + 1, fileID: fileID, caption: caption, markup: markup})
-	return len(p.photos), nil
-}
-
-func (p *recordingPublisher) EditPhoto(_ context.Context, chatID int64, messageID int, fileID string, caption string, markup *models.InlineKeyboardMarkup) error {
-	if p.editErr != nil {
-		return p.editErr
+func newVotePublisherDeps(editErr error) *votePublisherDeps {
+	deps := &votePublisherDeps{editErr: editErr}
+	deps.mock = &MoqPublisher{
+		SendPhotoFunc: func(_ context.Context, chatID int64, fileID string, caption string, markup *models.InlineKeyboardMarkup) (int, error) {
+			deps.photos = append(deps.photos, photoCall{chatID: chatID, messageID: len(deps.photos) + 1, fileID: fileID, caption: caption, markup: markup})
+			return len(deps.photos), nil
+		},
+		EditPhotoFunc: func(_ context.Context, chatID int64, messageID int, fileID string, caption string, markup *models.InlineKeyboardMarkup) error {
+			if deps.editErr != nil {
+				return deps.editErr
+			}
+			deps.edits = append(deps.edits, photoCall{chatID: chatID, messageID: messageID, fileID: fileID, caption: caption, markup: markup})
+			return nil
+		},
+		SendTextFunc: func(_ context.Context, chatID int64, text string) (int, error) {
+			deps.texts = append(deps.texts, textCall{chatID: chatID, text: text})
+			return len(deps.texts), nil
+		},
+		AnswerCallbackFunc: func(_ context.Context, id string, text string) error {
+			deps.answers = append(deps.answers, answerCall{id: id, text: text})
+			return nil
+		},
 	}
-	p.edits = append(p.edits, photoCall{chatID: chatID, messageID: messageID, fileID: fileID, caption: caption, markup: markup})
-	return nil
-}
-
-func (p *recordingPublisher) SendText(_ context.Context, chatID int64, text string) (int, error) {
-	p.texts = append(p.texts, textCall{chatID: chatID, text: text})
-	return len(p.texts), nil
-}
-
-func (p *recordingPublisher) AnswerCallback(_ context.Context, id string, text string) error {
-	p.answers = append(p.answers, answerCall{id: id, text: text})
-	return nil
+	return deps
 }
 
 func itoa(value int64) string {

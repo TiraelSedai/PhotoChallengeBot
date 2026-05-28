@@ -9,11 +9,11 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-type MainChatHandler interface {
+type mainChatHandler interface {
 	HandleMainChatMessage(context.Context, *models.Message) error
 }
 
-type MainChatHandlers []MainChatHandler
+type MainChatHandlers []mainChatHandler
 
 func (h MainChatHandlers) HandleMainChatMessage(ctx context.Context, message *models.Message) error {
 	for _, handler := range h {
@@ -24,15 +24,15 @@ func (h MainChatHandlers) HandleMainChatMessage(ctx context.Context, message *mo
 	return nil
 }
 
-type AdminChatHandler interface {
+type adminChatHandler interface {
 	HandleAdminChatMessage(context.Context, *models.Message) error
 }
 
-type PrivateStartHandler interface {
+type privateStartHandler interface {
 	HandlePrivateStart(context.Context, *models.Message, string) error
 }
 
-type CallbackQueryHandler interface {
+type callbackQueryHandler interface {
 	HandleCallbackQuery(context.Context, *models.CallbackQuery) error
 }
 
@@ -42,10 +42,10 @@ type Config struct {
 	MainChatID          int64
 	AdminChatID         int64
 	BotUsername         func() string
-	MainChatHandler     MainChatHandler
-	AdminChatHandler    AdminChatHandler
-	PrivateStartHandler PrivateStartHandler
-	CallbackHandler     CallbackQueryHandler
+	MainChatHandler     mainChatHandler
+	AdminChatHandler    adminChatHandler
+	PrivateStartHandler privateStartHandler
+	CallbackHandler     callbackQueryHandler
 	OnError             ErrorHandler
 }
 
@@ -53,10 +53,10 @@ type Router struct {
 	mainChatID          int64
 	adminChatID         int64
 	botUsername         func() string
-	mainChatHandler     MainChatHandler
-	adminChatHandler    AdminChatHandler
-	privateStartHandler PrivateStartHandler
-	callbackHandler     CallbackQueryHandler
+	mainChatHandler     mainChatHandler
+	adminChatHandler    adminChatHandler
+	privateStartHandler privateStartHandler
+	callbackHandler     callbackQueryHandler
 	onError             ErrorHandler
 }
 

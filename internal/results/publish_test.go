@@ -32,7 +32,7 @@ func TestPublisherPublishesPinsResultsAndSendsAchievement(t *testing.T) {
 		t.Fatalf("add manual vote: %v", err)
 	}
 
-	publisher := &recordingResultsPublisher{}
+	publisher := newResultsPublisherDeps()
 	service := newResultsPublisher(t, database, publisher)
 	if err := service.PublishDue(context.Background(), -1001, 10); err != nil {
 		t.Fatalf("PublishDue() error = %v", err)
@@ -81,7 +81,7 @@ func TestNewPublisherPanicsOnNilClock(t *testing.T) {
 		Votes:      repository.NewVotes(database),
 		Users:      repository.NewUsers(database),
 		Renderer:   renderer,
-		Publisher:  &recordingResultsPublisher{},
+		Publisher:  newResultsPublisherDeps().mock,
 	})
 }
 
@@ -98,7 +98,7 @@ func TestPublisherRetriesExistingResultsPinWithoutDuplicateMessage(t *testing.T)
 		t.Fatalf("seed results message id: %v", err)
 	}
 
-	publisher := &recordingResultsPublisher{}
+	publisher := newResultsPublisherDeps()
 	service := newResultsPublisher(t, database, publisher)
 	if err := service.PublishDue(context.Background(), -1001, 10); err != nil {
 		t.Fatalf("PublishDue() error = %v", err)
@@ -118,10 +118,9 @@ func TestPublisherPersistsResultsMessageAfterSendCancelsParentContext(t *testing
 	challengeID := createFinishedChallenge(t, database)
 	createResultPhoto(t, database, challengeID, 11, "file-1")
 	ctx, cancel := context.WithCancel(context.Background())
-	publisher := &recordingResultsPublisher{
-		afterMarkdown:    cancel,
-		pinChecksContext: true,
-	}
+	publisher := newResultsPublisherDeps()
+	publisher.afterMarkdown = cancel
+	publisher.pinChecksContext = true
 	service := newResultsPublisher(t, database, publisher)
 
 	if err := service.PublishDue(ctx, -1001, 10); !errors.Is(err, context.Canceled) {
@@ -138,7 +137,7 @@ func TestPublisherPersistsResultsMessageAfterSendCancelsParentContext(t *testing
 		t.Fatalf("ResultsPinnedAt = %v, want unpinned after canceled pin", stored.ResultsPinnedAt)
 	}
 
-	retryPublisher := &recordingResultsPublisher{}
+	retryPublisher := newResultsPublisherDeps()
 	retryService := newResultsPublisher(t, database, retryPublisher)
 	if err := retryService.PublishDue(context.Background(), -1001, 10); err != nil {
 		t.Fatalf("retry PublishDue() error = %v", err)
@@ -156,22 +155,21 @@ func TestPublisherRecordsResultsMessageIDAfterClaimedPersistFailure(t *testing.T
 	defer database.Close()
 	challengeID := createFinishedChallenge(t, database)
 	createResultPhoto(t, database, challengeID, 11, "file-1")
-	publisher := &recordingResultsPublisher{}
+	publisher := newResultsPublisherDeps()
 	renderer, err := templates.Load(filepath.Join("..", "..", "templates"))
 	if err != nil {
 		t.Fatalf("load templates: %v", err)
 	}
+	challenges := newResultsChallengeDeps(repository.NewChallenges(database))
+	challenges.failSetResultsMessageID = true
 	service := NewPublisher(PublishConfig{
-		Challenges: &failingResultsChallenges{
-			Challenges:              repository.NewChallenges(database),
-			failSetResultsMessageID: true,
-		},
-		Photos:    repository.NewPhotos(database),
-		Votes:     repository.NewVotes(database),
-		Users:     repository.NewUsers(database),
-		Renderer:  renderer,
-		Publisher: publisher,
-		Now:       func() time.Time { return resultTestTime(4 * time.Hour) },
+		Challenges: challenges.mock,
+		Photos:     repository.NewPhotos(database),
+		Votes:      repository.NewVotes(database),
+		Users:      repository.NewUsers(database),
+		Renderer:   renderer,
+		Publisher:  publisher.mock,
+		Now:        func() time.Time { return resultTestTime(4 * time.Hour) },
 	})
 
 	if err := service.PublishDue(context.Background(), -1001, 10); err != nil {
@@ -195,7 +193,7 @@ func TestPublisherRecordsResultsMessageIDAfterClaimedPersistFailure(t *testing.T
 func TestPublisherSendsBackloggedAchievementMilestonesInChallengeOrder(t *testing.T) {
 	database := openResultsTestDB(t)
 	defer database.Close()
-	publisher := &recordingResultsPublisher{}
+	publisher := newResultsPublisherDeps()
 	service := newResultsPublisher(t, database, publisher)
 
 	for idx := 1; idx <= 3; idx++ {
@@ -231,7 +229,7 @@ func TestPublisherSendsBackloggedAchievementMilestonesInChallengeOrder(t *testin
 func TestPublisherSendsTiedAchievementWinnersInSingleClaimedMessage(t *testing.T) {
 	database := openResultsTestDB(t)
 	defer database.Close()
-	publisher := &recordingResultsPublisher{}
+	publisher := newResultsPublisherDeps()
 	service := newResultsPublisher(t, database, publisher)
 
 	challengeID := createFinishedChallenge(t, database)
@@ -266,7 +264,7 @@ func TestPublisherSendsTiedAchievementWinnersInSingleClaimedMessage(t *testing.T
 func TestPublisherSkipsAchievementsWithActiveClaim(t *testing.T) {
 	database := openResultsTestDB(t)
 	defer database.Close()
-	publisher := &recordingResultsPublisher{}
+	publisher := newResultsPublisherDeps()
 	service := newResultsPublisher(t, database, publisher)
 
 	challengeID := createFinishedChallenge(t, database)
@@ -308,7 +306,8 @@ func TestPublisherMarksAchievementsSentAfterSendCancelsParentContext(t *testing.
 		t.Fatalf("mark results pinned: %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	publisher := &recordingResultsPublisher{afterText: cancel}
+	publisher := newResultsPublisherDeps()
+	publisher.afterText = cancel
 	service := newResultsPublisher(t, database, publisher)
 
 	if err := service.PublishDueAchievements(ctx, -1001, 10); err != nil {
@@ -338,22 +337,21 @@ func TestPublisherRecordsAchievementMessageAfterClaimedPersistFailure(t *testing
 	`, resultTestTime(time.Hour).Format(time.RFC3339Nano), challengeID); err != nil {
 		t.Fatalf("mark results pinned: %v", err)
 	}
-	publisher := &recordingResultsPublisher{}
+	publisher := newResultsPublisherDeps()
 	renderer, err := templates.Load(filepath.Join("..", "..", "templates"))
 	if err != nil {
 		t.Fatalf("load templates: %v", err)
 	}
+	challenges := newResultsChallengeDeps(repository.NewChallenges(database))
+	challenges.failSetAchievementsMessageID = true
 	service := NewPublisher(PublishConfig{
-		Challenges: &failingResultsChallenges{
-			Challenges:                   repository.NewChallenges(database),
-			failSetAchievementsMessageID: true,
-		},
-		Photos:    repository.NewPhotos(database),
-		Votes:     repository.NewVotes(database),
-		Users:     repository.NewUsers(database),
-		Renderer:  renderer,
-		Publisher: publisher,
-		Now:       func() time.Time { return resultTestTime(4 * time.Hour) },
+		Challenges: challenges.mock,
+		Photos:     repository.NewPhotos(database),
+		Votes:      repository.NewVotes(database),
+		Users:      repository.NewUsers(database),
+		Renderer:   renderer,
+		Publisher:  publisher.mock,
+		Now:        func() time.Time { return resultTestTime(4 * time.Hour) },
 	})
 
 	if err := service.PublishDueAchievements(context.Background(), -1001, 10); err != nil {
@@ -386,22 +384,21 @@ func TestPublisherDoesNotDuplicateAchievementAfterMarkSentFailure(t *testing.T) 
 	`, resultTestTime(time.Hour).Format(time.RFC3339Nano), challengeID); err != nil {
 		t.Fatalf("mark results pinned: %v", err)
 	}
-	publisher := &recordingResultsPublisher{}
+	publisher := newResultsPublisherDeps()
 	renderer, err := templates.Load(filepath.Join("..", "..", "templates"))
 	if err != nil {
 		t.Fatalf("load templates: %v", err)
 	}
+	challenges := newResultsChallengeDeps(repository.NewChallenges(database))
+	challenges.failMarkAchievementsSent = true
 	service := NewPublisher(PublishConfig{
-		Challenges: &failingResultsChallenges{
-			Challenges:               repository.NewChallenges(database),
-			failMarkAchievementsSent: true,
-		},
-		Photos:    repository.NewPhotos(database),
-		Votes:     repository.NewVotes(database),
-		Users:     repository.NewUsers(database),
-		Renderer:  renderer,
-		Publisher: publisher,
-		Now:       func() time.Time { return resultTestTime(4 * time.Hour) },
+		Challenges: challenges.mock,
+		Photos:     repository.NewPhotos(database),
+		Votes:      repository.NewVotes(database),
+		Users:      repository.NewUsers(database),
+		Renderer:   renderer,
+		Publisher:  publisher.mock,
+		Now:        func() time.Time { return resultTestTime(4 * time.Hour) },
 	})
 
 	if err := service.PublishDueAchievements(context.Background(), -1001, 10); err == nil {
@@ -437,7 +434,7 @@ func TestPublisherDoesNotDuplicateAchievementAfterMarkSentFailure(t *testing.T) 
 func TestPublisherBlocksAchievementsBehindEarlierUnpublishedResults(t *testing.T) {
 	database := openResultsTestDB(t)
 	defer database.Close()
-	publisher := &recordingResultsPublisher{}
+	publisher := newResultsPublisherDeps()
 	service := newResultsPublisher(t, database, publisher)
 
 	firstChallengeID := createFinishedChallengeWithNum(t, database, 1)
@@ -478,7 +475,8 @@ func TestPublisherStopsAchievementsAfterFirstSendFailure(t *testing.T) {
 	database := openResultsTestDB(t)
 	defer database.Close()
 	sendErr := errors.New("telegram send failed")
-	publisher := &recordingResultsPublisher{textErr: sendErr}
+	publisher := newResultsPublisherDeps()
+	publisher.textErr = sendErr
 	service := newResultsPublisher(t, database, publisher)
 
 	challengeID := createFinishedChallenge(t, database)
@@ -530,7 +528,7 @@ func openResultsTestDB(t *testing.T) *sqlx.DB {
 	return database
 }
 
-func newResultsPublisher(t *testing.T, database *sqlx.DB, publisher *recordingResultsPublisher) *PublisherService {
+func newResultsPublisher(t *testing.T, database *sqlx.DB, publisher *resultsPublisherDeps) *PublisherService {
 	t.Helper()
 	renderer, err := templates.Load(filepath.Join("..", "..", "templates"))
 	if err != nil {
@@ -542,7 +540,7 @@ func newResultsPublisher(t *testing.T, database *sqlx.DB, publisher *recordingRe
 		Votes:      repository.NewVotes(database),
 		Users:      repository.NewUsers(database),
 		Renderer:   renderer,
-		Publisher:  publisher,
+		Publisher:  publisher.mock,
 		Now:        func() time.Time { return resultTestTime(4 * time.Hour) },
 	})
 }
@@ -608,7 +606,8 @@ func createResultPhoto(t *testing.T, database *sqlx.DB, challengeID, authorID in
 	return photo.ID
 }
 
-type recordingResultsPublisher struct {
+type resultsPublisherDeps struct {
+	mock             *MoqPublisher
 	markdown         []messageCall
 	texts            []messageCall
 	pins             []pinCall
@@ -629,82 +628,84 @@ type pinCall struct {
 	messageID int
 }
 
-func (p *recordingResultsPublisher) SendMarkdown(_ context.Context, chatID int64, text string) (int, error) {
-	p.markdown = append(p.markdown, messageCall{chatID: chatID, text: text})
-	if p.afterMarkdown != nil {
-		p.afterMarkdown()
+func newResultsPublisherDeps() *resultsPublisherDeps {
+	deps := &resultsPublisherDeps{}
+	deps.mock = &MoqPublisher{
+		SendMarkdownFunc: func(_ context.Context, chatID int64, text string) (int, error) {
+			deps.markdown = append(deps.markdown, messageCall{chatID: chatID, text: text})
+			if deps.afterMarkdown != nil {
+				deps.afterMarkdown()
+			}
+			return len(deps.markdown), nil
+		},
+		SendTextFunc: func(_ context.Context, chatID int64, text string) (int, error) {
+			deps.textAttempts++
+			if deps.textErr != nil {
+				return 0, deps.textErr
+			}
+			deps.texts = append(deps.texts, messageCall{chatID: chatID, text: text})
+			if deps.afterText != nil {
+				deps.afterText()
+			}
+			return len(deps.texts), nil
+		},
+		PinFunc: func(ctx context.Context, chatID int64, messageID int) error {
+			if deps.pinChecksContext && ctx.Err() != nil {
+				return ctx.Err()
+			}
+			deps.pins = append(deps.pins, pinCall{chatID: chatID, messageID: messageID})
+			return nil
+		},
 	}
-	return len(p.markdown), nil
+	return deps
 }
 
-func (p *recordingResultsPublisher) SendText(_ context.Context, chatID int64, text string) (int, error) {
-	p.textAttempts++
-	if p.textErr != nil {
-		return 0, p.textErr
-	}
-	p.texts = append(p.texts, messageCall{chatID: chatID, text: text})
-	if p.afterText != nil {
-		p.afterText()
-	}
-	return len(p.texts), nil
-}
-
-func (p *recordingResultsPublisher) Pin(ctx context.Context, chatID int64, messageID int) error {
-	if p.pinChecksContext && ctx.Err() != nil {
-		return ctx.Err()
-	}
-	p.pins = append(p.pins, pinCall{chatID: chatID, messageID: messageID})
-	return nil
-}
-
-func resultTestTime(offset time.Duration) time.Time {
-	return time.Date(2026, 5, 18, 12, 0, 0, 0, time.UTC).Add(offset)
-}
-
-type failingResultsChallenges struct {
-	*repository.Challenges
+type resultsChallengeDeps struct {
+	mock                         *MoqChallengeStore
+	challenges                   *repository.Challenges
 	failSetResultsMessageID      bool
 	failSetAchievementsMessageID bool
 	failMarkAchievementsSent     bool
 }
 
-func (c *failingResultsChallenges) SetResultsMessageID(
-	ctx context.Context,
-	id int64,
-	messageID int,
-	claimedAt time.Time,
-	updatedAt time.Time,
-) (bool, error) {
-	if c.failSetResultsMessageID {
-		c.failSetResultsMessageID = false
-		return false, errors.New("set results message id failed")
+func newResultsChallengeDeps(challenges *repository.Challenges) *resultsChallengeDeps {
+	deps := &resultsChallengeDeps{challenges: challenges}
+	deps.mock = &MoqChallengeStore{
+		GetFunc:                         challenges.Get,
+		ListUnpublishedResultsFunc:      challenges.ListUnpublishedResults,
+		ClaimResultsFunc:                challenges.ClaimResults,
+		RecordResultsMessageIDFunc:      challenges.RecordResultsMessageID,
+		MarkResultsPinnedFunc:           challenges.MarkResultsPinned,
+		ReleaseResultsClaimFunc:         challenges.ReleaseResultsClaim,
+		ListUnsentAchievementsFunc:      challenges.ListUnsentAchievements,
+		ClaimAchievementsFunc:           challenges.ClaimAchievements,
+		RecordAchievementsMessageIDFunc: challenges.RecordAchievementsMessageID,
+		ReleaseAchievementsClaimFunc:    challenges.ReleaseAchievementsClaim,
+		SetResultsMessageIDFunc: func(ctx context.Context, id int64, messageID int, claimedAt time.Time, updatedAt time.Time) (bool, error) {
+			if deps.failSetResultsMessageID {
+				deps.failSetResultsMessageID = false
+				return false, errors.New("set results message id failed")
+			}
+			return deps.challenges.SetResultsMessageID(ctx, id, messageID, claimedAt, updatedAt)
+		},
+		SetAchievementsMessageIDFunc: func(ctx context.Context, id int64, messageID int, claimedAt time.Time, updatedAt time.Time) (bool, error) {
+			if deps.failSetAchievementsMessageID {
+				deps.failSetAchievementsMessageID = false
+				return false, errors.New("set achievements message id failed")
+			}
+			return deps.challenges.SetAchievementsMessageID(ctx, id, messageID, claimedAt, updatedAt)
+		},
+		MarkAchievementsSentFunc: func(ctx context.Context, id int64, claimedAt time.Time, sentAt time.Time) (bool, error) {
+			if deps.failMarkAchievementsSent {
+				deps.failMarkAchievementsSent = false
+				return false, errors.New("mark achievements sent failed")
+			}
+			return deps.challenges.MarkAchievementsSent(ctx, id, claimedAt, sentAt)
+		},
 	}
-	return c.Challenges.SetResultsMessageID(ctx, id, messageID, claimedAt, updatedAt)
+	return deps
 }
 
-func (c *failingResultsChallenges) SetAchievementsMessageID(
-	ctx context.Context,
-	id int64,
-	messageID int,
-	claimedAt time.Time,
-	updatedAt time.Time,
-) (bool, error) {
-	if c.failSetAchievementsMessageID {
-		c.failSetAchievementsMessageID = false
-		return false, errors.New("set achievements message id failed")
-	}
-	return c.Challenges.SetAchievementsMessageID(ctx, id, messageID, claimedAt, updatedAt)
-}
-
-func (c *failingResultsChallenges) MarkAchievementsSent(
-	ctx context.Context,
-	id int64,
-	claimedAt time.Time,
-	sentAt time.Time,
-) (bool, error) {
-	if c.failMarkAchievementsSent {
-		c.failMarkAchievementsSent = false
-		return false, errors.New("mark achievements sent failed")
-	}
-	return c.Challenges.MarkAchievementsSent(ctx, id, claimedAt, sentAt)
+func resultTestTime(offset time.Duration) time.Time {
+	return time.Date(2026, 5, 18, 12, 0, 0, 0, time.UTC).Add(offset)
 }

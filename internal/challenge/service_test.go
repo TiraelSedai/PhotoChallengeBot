@@ -13,7 +13,7 @@ func TestCreateActiveUsesDefaultDatesInMoscow(t *testing.T) {
 	t.Parallel()
 
 	location := mustLoadLocation(t, "Europe/Moscow")
-	store := &recordingStore{nextNum: 7}
+	store := newStoreMock(nil, 7, nil)
 	service := NewService(store, location, func() time.Time {
 		return time.Date(2026, 5, 1, 11, 30, 0, 0, location)
 	})
@@ -57,7 +57,7 @@ func TestNewServicePanicsOnNilLocation(t *testing.T) {
 			t.Fatal("NewService() did not panic")
 		}
 	}()
-	NewService(&recordingStore{}, nil, time.Now)
+	NewService(newStoreMock(nil, 0, nil), nil, time.Now)
 }
 
 func TestNewServicePanicsOnNilClock(t *testing.T) {
@@ -68,14 +68,15 @@ func TestNewServicePanicsOnNilClock(t *testing.T) {
 			t.Fatal("NewService() did not panic")
 		}
 	}()
-	NewService(&recordingStore{}, time.UTC, nil)
+	NewService(newStoreMock(nil, 0, nil), time.UTC, nil)
 }
 
 func TestPlanDoesNotCreateChallenge(t *testing.T) {
 	t.Parallel()
 
 	location := mustLoadLocation(t, "Europe/Moscow")
-	store := &recordingStore{nextNum: 3}
+	var created repository.CreateChallengeInput
+	store := newStoreMock(nil, 3, &created)
 	service := NewService(store, location, func() time.Time {
 		return time.Date(2026, 5, 1, 11, 30, 0, 0, location)
 	})
@@ -89,8 +90,8 @@ func TestPlanDoesNotCreateChallenge(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Plan() error = %v", err)
 	}
-	if store.created.MainChatID != 0 {
-		t.Fatalf("Plan() created challenge: %#v", store.created)
+	if created.MainChatID != 0 {
+		t.Fatalf("Plan() created challenge: %#v", created)
 	}
 	if plan.Num != 3 {
 		t.Fatalf("Num = %d, want 3", plan.Num)
@@ -103,7 +104,7 @@ func TestCreateActiveUsesCustomDates(t *testing.T) {
 	location := mustLoadLocation(t, "Europe/Moscow")
 	start := time.Date(2026, 6, 3, 15, 0, 0, 0, location)
 	end := time.Date(2026, 6, 10, 9, 0, 0, 0, location)
-	store := &recordingStore{nextNum: 1}
+	store := newStoreMock(nil, 1, nil)
 	service := NewService(store, location, func() time.Time {
 		return time.Date(2026, 5, 18, 12, 0, 0, 0, location)
 	})
@@ -133,9 +134,7 @@ func TestCreateActiveUsesCustomDates(t *testing.T) {
 func TestCreateActiveRejectsExistingOpenChallenge(t *testing.T) {
 	t.Parallel()
 
-	store := &recordingStore{
-		open: &repository.Challenge{ID: 42, State: repository.ChallengeStateVoting},
-	}
+	store := newStoreMock(&repository.Challenge{ID: 42, State: repository.ChallengeStateVoting}, 0, nil)
 	service := NewService(store, time.UTC, time.Now)
 
 	_, err := service.CreateActive(context.Background(), CreateInput{
@@ -155,7 +154,7 @@ func TestCreateActiveRejectsEndDateBeforeStartDate(t *testing.T) {
 	location := mustLoadLocation(t, "Europe/Moscow")
 	start := time.Date(2026, 6, 10, 0, 0, 0, 0, location)
 	end := time.Date(2026, 6, 9, 0, 0, 0, 0, location)
-	store := &recordingStore{nextNum: 1}
+	store := newStoreMock(nil, 1, nil)
 	service := NewService(store, location, time.Now)
 
 	_, err := service.CreateActive(context.Background(), CreateInput{
@@ -171,36 +170,34 @@ func TestCreateActiveRejectsEndDateBeforeStartDate(t *testing.T) {
 	}
 }
 
-type recordingStore struct {
-	open    *repository.Challenge
-	nextNum int
-	created repository.CreateChallengeInput
-}
-
-func (s *recordingStore) Create(_ context.Context, input repository.CreateChallengeInput) (repository.Challenge, error) {
-	s.created = input
-	return repository.Challenge{
-		ID:              1,
-		MainChatID:      input.MainChatID,
-		Num:             input.Num,
-		Theme:           input.Theme,
-		Hashtag:         input.Hashtag,
-		State:           input.State,
-		AcceptStartAt:   input.AcceptStartAt,
-		AcceptUntilAt:   input.AcceptUntilAt,
-		ReminderAt:      input.ReminderAt,
-		CreatedByUserID: input.CreatedByUserID,
-		CreatedAt:       input.CreatedAt,
-		UpdatedAt:       input.CreatedAt,
-	}, nil
-}
-
-func (s *recordingStore) FindOpenByMainChatID(context.Context, int64) (*repository.Challenge, error) {
-	return s.open, nil
-}
-
-func (s *recordingStore) NextNum(context.Context, int64) (int, error) {
-	return s.nextNum, nil
+func newStoreMock(open *repository.Challenge, nextNum int, created *repository.CreateChallengeInput) *MoqStore {
+	return &MoqStore{
+		CreateFunc: func(_ context.Context, input repository.CreateChallengeInput) (repository.Challenge, error) {
+			if created != nil {
+				*created = input
+			}
+			return repository.Challenge{
+				ID:              1,
+				MainChatID:      input.MainChatID,
+				Num:             input.Num,
+				Theme:           input.Theme,
+				Hashtag:         input.Hashtag,
+				State:           input.State,
+				AcceptStartAt:   input.AcceptStartAt,
+				AcceptUntilAt:   input.AcceptUntilAt,
+				ReminderAt:      input.ReminderAt,
+				CreatedByUserID: input.CreatedByUserID,
+				CreatedAt:       input.CreatedAt,
+				UpdatedAt:       input.CreatedAt,
+			}, nil
+		},
+		FindOpenByMainChatIDFunc: func(context.Context, int64) (*repository.Challenge, error) {
+			return open, nil
+		},
+		NextNumFunc: func(context.Context, int64) (int, error) {
+			return nextNum, nil
+		},
+	}
 }
 
 func mustLoadLocation(t *testing.T, name string) *time.Location {

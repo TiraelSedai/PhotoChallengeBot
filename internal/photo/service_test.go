@@ -12,19 +12,18 @@ import (
 
 func TestServiceAcceptsFirstPhotoWithChallengeHashtag(t *testing.T) {
 	now := time.Date(2026, 5, 18, 12, 0, 0, 0, time.UTC)
-	store := newPhotoTestStore(activeChallenge(now, "#вода"))
-	publisher := &recordingPublisher{}
-	service := newTestService(store, publisher, now)
+	deps := newPhotoServiceDeps(activeChallenge(now, "#вода"))
+	service := newTestService(deps, now)
 
 	err := service.HandleMainChatMessage(context.Background(), photoMessage("снято сегодня #вода"))
 	if err != nil {
 		t.Fatalf("HandleMainChatMessage() error = %v", err)
 	}
 
-	if len(store.photos) != 1 {
-		t.Fatalf("photos length = %d, want 1", len(store.photos))
+	if len(deps.photos) != 1 {
+		t.Fatalf("photos length = %d, want 1", len(deps.photos))
 	}
-	got := store.photos[0]
+	got := deps.photos[0]
 	if got.ChallengeID != 42 || got.AuthorUserID != 11 || got.FileID != "large-file" || got.Caption != "снято сегодня #вода" {
 		t.Fatalf("stored photo = %#v", got)
 	}
@@ -33,13 +32,13 @@ func TestServiceAcceptsFirstPhotoWithChallengeHashtag(t *testing.T) {
 	}
 
 	wantMessages := []string{firstPhotoAcceptedMessage}
-	if !reflect.DeepEqual(publisher.messages, wantMessages) {
-		t.Fatalf("messages = %v, want %v", publisher.messages, wantMessages)
+	if !reflect.DeepEqual(deps.messages, wantMessages) {
+		t.Fatalf("messages = %v, want %v", deps.messages, wantMessages)
 	}
 }
 
 func TestNewServicePanicsOnNilClock(t *testing.T) {
-	store := newPhotoTestStore(activeChallenge(time.Date(2026, 5, 18, 12, 0, 0, 0, time.UTC), "#tag"))
+	deps := newPhotoServiceDeps(activeChallenge(time.Date(2026, 5, 18, 12, 0, 0, 0, time.UTC), "#tag"))
 	defer func() {
 		if recover() == nil {
 			t.Fatal("NewService() did not panic")
@@ -47,18 +46,17 @@ func TestNewServicePanicsOnNilClock(t *testing.T) {
 	}()
 	NewService(Config{
 		MainChatID: 1001,
-		Challenges: store,
-		Users:      store,
-		Photos:     store,
-		Publisher:  &recordingPublisher{},
+		Challenges: deps.challenges,
+		Users:      deps.users,
+		Photos:     deps.photoStore,
+		Publisher:  deps.publisher,
 	})
 }
 
 func TestServiceReplacesExistingPhoto(t *testing.T) {
 	now := time.Date(2026, 5, 18, 12, 0, 0, 0, time.UTC)
-	store := newPhotoTestStore(activeChallenge(now, "#tag"))
-	publisher := &recordingPublisher{}
-	service := newTestService(store, publisher, now)
+	deps := newPhotoServiceDeps(activeChallenge(now, "#tag"))
+	service := newTestService(deps, now)
 
 	if err := service.HandleMainChatMessage(context.Background(), photoMessage("#tag first")); err != nil {
 		t.Fatalf("first HandleMainChatMessage() error = %v", err)
@@ -71,35 +69,34 @@ func TestServiceReplacesExistingPhoto(t *testing.T) {
 		t.Fatalf("second HandleMainChatMessage() error = %v", err)
 	}
 
-	if len(store.photos) != 1 {
-		t.Fatalf("photos length = %d, want 1", len(store.photos))
+	if len(deps.photos) != 1 {
+		t.Fatalf("photos length = %d, want 1", len(deps.photos))
 	}
-	got := store.photos[0]
+	got := deps.photos[0]
 	if got.FileID != "new-file" || got.SourceMessageID != 101 || got.Caption != "#tag second" {
 		t.Fatalf("stored replacement = %#v", got)
 	}
 
 	wantMessages := []string{firstPhotoAcceptedMessage, photoReplacedMessage}
-	if !reflect.DeepEqual(publisher.messages, wantMessages) {
-		t.Fatalf("messages = %v, want %v", publisher.messages, wantMessages)
+	if !reflect.DeepEqual(deps.messages, wantMessages) {
+		t.Fatalf("messages = %v, want %v", deps.messages, wantMessages)
 	}
 }
 
 func TestServiceIgnoresPhotoWithoutMatchingHashtag(t *testing.T) {
 	now := time.Date(2026, 5, 18, 12, 0, 0, 0, time.UTC)
-	store := newPhotoTestStore(activeChallenge(now, "#tag"))
-	publisher := &recordingPublisher{}
-	service := newTestService(store, publisher, now)
+	deps := newPhotoServiceDeps(activeChallenge(now, "#tag"))
+	service := newTestService(deps, now)
 
 	if err := service.HandleMainChatMessage(context.Background(), photoMessage("#tagged is not the same tag")); err != nil {
 		t.Fatalf("HandleMainChatMessage() error = %v", err)
 	}
 
-	if len(store.photos) != 0 {
-		t.Fatalf("photos length = %d, want 0", len(store.photos))
+	if len(deps.photos) != 0 {
+		t.Fatalf("photos length = %d, want 0", len(deps.photos))
 	}
-	if len(publisher.messages) != 0 {
-		t.Fatalf("messages = %v, want none", publisher.messages)
+	if len(deps.messages) != 0 {
+		t.Fatalf("messages = %v, want none", deps.messages)
 	}
 }
 
@@ -107,36 +104,35 @@ func TestServiceIgnoresClosedOrVotingChallenge(t *testing.T) {
 	now := time.Date(2026, 5, 18, 19, 0, 0, 0, time.UTC)
 	closed := activeChallenge(now, "#tag")
 	closed.AcceptUntilAt = now.Add(-time.Minute)
-	store := newPhotoTestStore(closed)
-	publisher := &recordingPublisher{}
-	service := newTestService(store, publisher, now)
+	deps := newPhotoServiceDeps(closed)
+	service := newTestService(deps, now)
 
 	if err := service.HandleMainChatMessage(context.Background(), photoMessage("#tag")); err != nil {
 		t.Fatalf("HandleMainChatMessage() error = %v", err)
 	}
-	if len(store.photos) != 0 {
-		t.Fatalf("photos length = %d, want 0 after accept window", len(store.photos))
+	if len(deps.photos) != 0 {
+		t.Fatalf("photos length = %d, want 0 after accept window", len(deps.photos))
 	}
 
 	voting := activeChallenge(now.Add(-time.Hour), "#tag")
 	voting.State = repository.ChallengeStateVoting
 	voting.AcceptUntilAt = now.Add(time.Hour)
-	store.challenge = &voting
+	deps.challenge = &voting
 	if err := service.HandleMainChatMessage(context.Background(), photoMessage("#tag")); err != nil {
 		t.Fatalf("HandleMainChatMessage() voting error = %v", err)
 	}
-	if len(store.photos) != 0 {
-		t.Fatalf("photos length = %d, want 0 during voting", len(store.photos))
+	if len(deps.photos) != 0 {
+		t.Fatalf("photos length = %d, want 0 during voting", len(deps.photos))
 	}
 }
 
-func newTestService(store *photoTestStore, publisher *recordingPublisher, now time.Time) *Service {
+func newTestService(deps *photoServiceDeps, now time.Time) *Service {
 	return NewService(Config{
 		MainChatID: 1001,
-		Challenges: store,
-		Users:      store,
-		Photos:     store,
-		Publisher:  publisher,
+		Challenges: deps.challenges,
+		Users:      deps.users,
+		Photos:     deps.photoStore,
+		Publisher:  deps.publisher,
 		Now: func() time.Time {
 			return now
 		},
@@ -167,60 +163,58 @@ func photoMessage(caption string) *models.Message {
 	}
 }
 
-type photoTestStore struct {
-	challenge *repository.Challenge
-	users     map[int64]repository.User
-	photos    []repository.Photo
+type photoServiceDeps struct {
+	challenge  *repository.Challenge
+	usersByID  map[int64]repository.User
+	photos     []repository.Photo
+	messages   []string
+	challenges *MoqChallenges
+	users      *MoqUsers
+	photoStore *MoqPhotos
+	publisher  *MoqPublisher
 }
 
-func newPhotoTestStore(challenge repository.Challenge) *photoTestStore {
-	return &photoTestStore{
+func newPhotoServiceDeps(challenge repository.Challenge) *photoServiceDeps {
+	deps := &photoServiceDeps{
 		challenge: &challenge,
-		users:     make(map[int64]repository.User),
+		usersByID: make(map[int64]repository.User),
 	}
-}
-
-func (s *photoTestStore) FindOpenByMainChatID(_ context.Context, mainChatID int64) (*repository.Challenge, error) {
-	if s.challenge == nil || s.challenge.MainChatID != mainChatID {
-		return nil, nil
-	}
-	return s.challenge, nil
-}
-
-func (s *photoTestStore) Upsert(_ context.Context, user repository.User) (repository.User, error) {
-	s.users[user.ID] = user
-	return user, nil
-}
-
-func (s *photoTestStore) UpsertCurrent(_ context.Context, input repository.UpsertPhotoInput) (repository.Photo, bool, error) {
-	photo := repository.Photo{
-		ID:              1,
-		ChallengeID:     input.ChallengeID,
-		AuthorUserID:    input.AuthorUserID,
-		FileID:          input.FileID,
-		FileUniqueID:    input.FileUniqueID,
-		SourceChatID:    input.SourceChatID,
-		SourceMessageID: input.SourceMessageID,
-		Caption:         input.Caption,
-		SubmittedAt:     input.SubmittedAt,
-		UpdatedAt:       input.SubmittedAt,
-	}
-	for idx, existing := range s.photos {
-		if existing.ChallengeID == input.ChallengeID && existing.AuthorUserID == input.AuthorUserID {
-			photo.ID = existing.ID
-			s.photos[idx] = photo
-			return photo, true, nil
+	deps.challenges = &MoqChallenges{FindOpenByMainChatIDFunc: func(_ context.Context, mainChatID int64) (*repository.Challenge, error) {
+		if deps.challenge == nil || deps.challenge.MainChatID != mainChatID {
+			return nil, nil
 		}
-	}
-	s.photos = append(s.photos, photo)
-	return photo, false, nil
-}
-
-type recordingPublisher struct {
-	messages []string
-}
-
-func (p *recordingPublisher) SendText(_ context.Context, _ int64, text string) (int, error) {
-	p.messages = append(p.messages, text)
-	return len(p.messages), nil
+		return deps.challenge, nil
+	}}
+	deps.users = &MoqUsers{UpsertFunc: func(_ context.Context, user repository.User) (repository.User, error) {
+		deps.usersByID[user.ID] = user
+		return user, nil
+	}}
+	deps.photoStore = &MoqPhotos{UpsertCurrentFunc: func(_ context.Context, input repository.UpsertPhotoInput) (repository.Photo, bool, error) {
+		photo := repository.Photo{
+			ID:              1,
+			ChallengeID:     input.ChallengeID,
+			AuthorUserID:    input.AuthorUserID,
+			FileID:          input.FileID,
+			FileUniqueID:    input.FileUniqueID,
+			SourceChatID:    input.SourceChatID,
+			SourceMessageID: input.SourceMessageID,
+			Caption:         input.Caption,
+			SubmittedAt:     input.SubmittedAt,
+			UpdatedAt:       input.SubmittedAt,
+		}
+		for idx, existing := range deps.photos {
+			if existing.ChallengeID == input.ChallengeID && existing.AuthorUserID == input.AuthorUserID {
+				photo.ID = existing.ID
+				deps.photos[idx] = photo
+				return photo, true, nil
+			}
+		}
+		deps.photos = append(deps.photos, photo)
+		return photo, false, nil
+	}}
+	deps.publisher = &MoqPublisher{SendTextFunc: func(_ context.Context, _ int64, text string) (int, error) {
+		deps.messages = append(deps.messages, text)
+		return len(deps.messages), nil
+	}}
+	return deps
 }

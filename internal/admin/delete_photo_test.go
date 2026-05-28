@@ -19,7 +19,7 @@ func TestDeletePhotoByUsernameRemovesCurrentChallengePhoto(t *testing.T) {
 	ctx := context.Background()
 	challengeID := createDeletePhotoChallenge(t, database)
 	photo := createDeletePhotoEntry(t, database, challengeID, 11, "Author", "file-1")
-	publisher := &recordingPublisher{nextMessageID: 900}
+	publisher := newDeletePhotoPublisherDeps(900)
 	handler := newDeletePhotoTestHandler(database, publisher)
 
 	if err := handler.HandleAdminChatMessage(ctx, adminMessage("/delete_photo @Author")); err != nil {
@@ -53,7 +53,7 @@ func TestNewDeletePhotoHandlerPanicsOnNilBotUsername(t *testing.T) {
 		MainChatID:  -1001,
 		Challenges:  repository.NewChallenges(database),
 		Photos:      repository.NewPhotos(database),
-		Publisher:   &recordingPublisher{},
+		Publisher:   newDeletePhotoPublisherDeps(0).mock,
 	})
 }
 
@@ -65,7 +65,7 @@ func TestDeletePhotoByTelegramUserIDRemovesCurrentChallengePhoto(t *testing.T) {
 	ctx := context.Background()
 	challengeID := createDeletePhotoChallenge(t, database)
 	photo := createDeletePhotoEntry(t, database, challengeID, 12, "Author", "file-2")
-	publisher := &recordingPublisher{nextMessageID: 950}
+	publisher := newDeletePhotoPublisherDeps(950)
 	handler := newDeletePhotoTestHandler(database, publisher)
 
 	if err := handler.HandleAdminChatMessage(ctx, adminMessage("/delete_photo 12")); err != nil {
@@ -92,7 +92,7 @@ func TestDeletePhotoByUsernameReportsAmbiguousMatch(t *testing.T) {
 	challengeID := createDeletePhotoChallenge(t, database)
 	first := createDeletePhotoEntry(t, database, challengeID, 21, "SameName", "file-1")
 	second := createDeletePhotoEntry(t, database, challengeID, 22, "samename", "file-2")
-	publisher := &recordingPublisher{nextMessageID: 975}
+	publisher := newDeletePhotoPublisherDeps(975)
 	handler := newDeletePhotoTestHandler(database, publisher)
 
 	if err := handler.HandleAdminChatMessage(ctx, adminMessage("/delete_photo @samename")); err != nil {
@@ -119,7 +119,7 @@ func TestDeletePhotoReportsInvalidInputToAdmin(t *testing.T) {
 
 	database := openAdminTestDB(t)
 	defer database.Close()
-	publisher := &recordingPublisher{nextMessageID: 980}
+	publisher := newDeletePhotoPublisherDeps(980)
 	handler := newDeletePhotoTestHandler(database, publisher)
 
 	if err := handler.HandleAdminChatMessage(context.Background(), adminMessage("/delete_photo username")); err != nil {
@@ -141,7 +141,7 @@ func TestDeletePhotoReportsMissingCurrentChallengePhoto(t *testing.T) {
 	defer database.Close()
 	ctx := context.Background()
 	createDeletePhotoChallenge(t, database)
-	publisher := &recordingPublisher{nextMessageID: 985}
+	publisher := newDeletePhotoPublisherDeps(985)
 	handler := newDeletePhotoTestHandler(database, publisher)
 
 	if err := handler.HandleAdminChatMessage(ctx, adminMessage("/delete_photo 404")); err != nil {
@@ -164,7 +164,7 @@ func TestDeletePhotoIgnoresNonAdminChat(t *testing.T) {
 	ctx := context.Background()
 	challengeID := createDeletePhotoChallenge(t, database)
 	photo := createDeletePhotoEntry(t, database, challengeID, 11, "Author", "file-1")
-	publisher := &recordingPublisher{nextMessageID: 990}
+	publisher := newDeletePhotoPublisherDeps(990)
 	handler := newDeletePhotoTestHandler(database, publisher)
 
 	message := adminMessage("/delete_photo @Author")
@@ -190,7 +190,7 @@ func TestDeletePhotoMentionedBotCommands(t *testing.T) {
 	ctx := context.Background()
 	challengeID := createDeletePhotoChallenge(t, database)
 	otherBotPhoto := createDeletePhotoEntry(t, database, challengeID, 11, "Other", "file-1")
-	publisher := &recordingPublisher{nextMessageID: 995}
+	publisher := newDeletePhotoPublisherDeps(995)
 	handler := newDeletePhotoTestHandler(database, publisher)
 
 	if err := handler.HandleAdminChatMessage(ctx, adminMessage("/delete_photo@OtherBot @Other")); err != nil {
@@ -215,17 +215,41 @@ func TestDeletePhotoMentionedBotCommands(t *testing.T) {
 	}
 }
 
-func newDeletePhotoTestHandler(database *sqlx.DB, publisher *recordingPublisher) *DeletePhotoHandler {
+func newDeletePhotoTestHandler(database *sqlx.DB, publisher *deletePhotoPublisherDeps) *DeletePhotoHandler {
 	return NewDeletePhotoHandler(DeletePhotoConfig{
 		AdminChatID: -2002,
 		MainChatID:  -1001,
 		Challenges:  repository.NewChallenges(database),
 		Photos:      repository.NewPhotos(database),
-		Publisher:   publisher,
+		Publisher:   publisher.mock,
 		BotUsername: func() string {
 			return "PhotoChallengeBot"
 		},
 	})
+}
+
+type deletePhotoPublisherDeps struct {
+	mock          *MoqDeletePhotoPublisher
+	nextMessageID int
+	sent          []sentMessage
+	pins          []pinnedMessage
+}
+
+func newDeletePhotoPublisherDeps(nextMessageID int) *deletePhotoPublisherDeps {
+	deps := &deletePhotoPublisherDeps{nextMessageID: nextMessageID}
+	deps.mock = &MoqDeletePhotoPublisher{
+		SendTextFunc: func(_ context.Context, chatID int64, text string) (int, error) {
+			deps.nextMessageID++
+			messageID := deps.nextMessageID
+			deps.sent = append(deps.sent, sentMessage{
+				chatID:    chatID,
+				messageID: messageID,
+				text:      text,
+			})
+			return messageID, nil
+		},
+	}
+	return deps
 }
 
 func createDeletePhotoChallenge(t *testing.T, database *sqlx.DB) int64 {
