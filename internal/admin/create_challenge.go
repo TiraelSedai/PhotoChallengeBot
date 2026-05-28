@@ -10,6 +10,7 @@ import (
 
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/challenge"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/repository"
+	"github.com/TiraelSedai/PhotoChallengeBot/internal/require"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/templates"
 	"github.com/go-telegram/bot/models"
 )
@@ -80,43 +81,31 @@ type CreateChallengeConfig struct {
 }
 
 func NewCreateChallengeHandler(cfg CreateChallengeConfig) *CreateChallengeHandler {
-	location := cfg.Location
-	if location == nil {
-		location = time.UTC
-	}
-	botUsername := cfg.BotUsername
-	if botUsername == nil {
-		botUsername = func() string { return "" }
-	}
+	require.NotNil("location", cfg.Location)
+	require.NotNil("admin session store", cfg.Sessions)
+	require.NotNil("user store", cfg.Users)
+	require.NotNil("challenge planner", cfg.Challenges)
+	require.NotNil("challenge announcement store", cfg.Announcements)
+	require.NotNil("announcement renderer", cfg.Renderer)
+	require.NotNil("publisher", cfg.Publisher)
+	require.NotNil("bot username provider", cfg.BotUsername)
 	switch {
 	case cfg.AdminChatID == 0:
 		panic("admin chat id is required")
 	case cfg.MainChatID == 0:
 		panic("main chat id is required")
-	case cfg.Sessions == nil:
-		panic("admin session store is nil")
-	case cfg.Users == nil:
-		panic("user store is nil")
-	case cfg.Challenges == nil:
-		panic("challenge planner is nil")
-	case cfg.Announcements == nil:
-		panic("challenge announcement store is nil")
-	case cfg.Renderer == nil:
-		panic("announcement renderer is nil")
-	case cfg.Publisher == nil:
-		panic("publisher is nil")
 	}
 	return &CreateChallengeHandler{
 		adminChatID:   cfg.AdminChatID,
 		mainChatID:    cfg.MainChatID,
-		location:      location,
+		location:      cfg.Location,
 		sessions:      cfg.Sessions,
 		users:         cfg.Users,
 		challenges:    cfg.Challenges,
 		announcements: cfg.Announcements,
 		renderer:      cfg.Renderer,
 		publisher:     cfg.Publisher,
-		botUsername:   botUsername,
+		botUsername:   cfg.BotUsername,
 	}
 }
 

@@ -15,7 +15,7 @@ import (
 
 func TestCompactJSONHandlerWritesInformationWithoutLevel(t *testing.T) {
 	var buf bytes.Buffer
-	handler := NewCompactJSONHandler(&buf, nil)
+	handler := NewCompactJSONHandler(&buf, &slog.HandlerOptions{})
 	record := slog.NewRecord(
 		time.Date(2026, 5, 19, 12, 34, 56, 789, time.FixedZone("MSK", 3*60*60)),
 		slog.LevelInfo,
@@ -43,6 +43,16 @@ func TestCompactJSONHandlerWritesInformationWithoutLevel(t *testing.T) {
 	}
 }
 
+func TestCompactJSONHandlerPanicsOnNilOptions(t *testing.T) {
+	var buf bytes.Buffer
+	defer func() {
+		if recover() == nil {
+			t.Fatal("NewCompactJSONHandler() did not panic")
+		}
+	}()
+	NewCompactJSONHandler(&buf, nil)
+}
+
 func TestCompactJSONHandlerMapsNonInformationLevels(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -57,7 +67,7 @@ func TestCompactJSONHandlerMapsNonInformationLevels(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf bytes.Buffer
-			handler := NewCompactJSONHandler(&buf, nil)
+			handler := NewCompactJSONHandler(&buf, &slog.HandlerOptions{})
 			record := slog.NewRecord(time.Date(2026, 5, 19, 0, 0, 0, 0, time.UTC), tt.level, "event", 0)
 
 			if err := handler.Handle(context.Background(), record); err != nil {
@@ -74,7 +84,7 @@ func TestCompactJSONHandlerMapsNonInformationLevels(t *testing.T) {
 
 func TestCompactJSONHandlerEncodesErrorsAsStrings(t *testing.T) {
 	var buf bytes.Buffer
-	handler := NewCompactJSONHandler(&buf, nil)
+	handler := NewCompactJSONHandler(&buf, &slog.HandlerOptions{})
 	record := slog.NewRecord(time.Date(2026, 5, 19, 0, 0, 0, 0, time.UTC), slog.LevelError, "load config", 0)
 	record.AddAttrs(slog.Any("error", errors.New("missing token")))
 
@@ -90,7 +100,7 @@ func TestCompactJSONHandlerEncodesErrorsAsStrings(t *testing.T) {
 
 func TestCompactJSONHandlerPreservesAttributeGroupScope(t *testing.T) {
 	var buf bytes.Buffer
-	handler := NewCompactJSONHandler(&buf, nil).
+	handler := NewCompactJSONHandler(&buf, &slog.HandlerOptions{}).
 		WithAttrs([]slog.Attr{slog.String("request_id", "root")}).
 		WithGroup("telegram").
 		WithAttrs([]slog.Attr{slog.Int64("chat_id", 42)})
@@ -183,7 +193,7 @@ func TestCompactJSONHandlerAppliesReplaceAttrInsideGroups(t *testing.T) {
 
 func TestCompactJSONHandlerInlinesEmptyGroups(t *testing.T) {
 	var buf bytes.Buffer
-	handler := NewCompactJSONHandler(&buf, nil)
+	handler := NewCompactJSONHandler(&buf, &slog.HandlerOptions{})
 	record := slog.NewRecord(time.Date(2026, 5, 19, 0, 0, 0, 0, time.UTC), slog.LevelInfo, "grouped", 0)
 	record.AddAttrs(
 		slog.Group("", slog.String("inline", "root")),
@@ -215,7 +225,7 @@ func TestCompactJSONHandlerInlinesEmptyGroups(t *testing.T) {
 
 func TestCompactJSONHandlerDoesNotDropEventForUnsupportedValues(t *testing.T) {
 	var buf bytes.Buffer
-	handler := NewCompactJSONHandler(&buf, nil)
+	handler := NewCompactJSONHandler(&buf, &slog.HandlerOptions{})
 	record := slog.NewRecord(time.Date(2026, 5, 19, 0, 0, 0, 0, time.UTC), slog.LevelInfo, "has unsupported value", 0)
 	record.AddAttrs(slog.Any("callback", func() {}))
 
@@ -234,7 +244,7 @@ func TestCompactJSONHandlerDoesNotDropEventForUnsupportedValues(t *testing.T) {
 
 func TestCompactJSONHandlerDoesNotDropEventForNonFiniteFloats(t *testing.T) {
 	var buf bytes.Buffer
-	handler := NewCompactJSONHandler(&buf, nil)
+	handler := NewCompactJSONHandler(&buf, &slog.HandlerOptions{})
 	record := slog.NewRecord(time.Date(2026, 5, 19, 0, 0, 0, 0, time.UTC), slog.LevelInfo, "has nan", 0)
 	record.AddAttrs(slog.Float64("score", math.NaN()))
 
@@ -253,7 +263,7 @@ func TestCompactJSONHandlerDoesNotDropEventForNonFiniteFloats(t *testing.T) {
 
 func TestCompactJSONHandlerOmitsZeroRecordTime(t *testing.T) {
 	var buf bytes.Buffer
-	handler := NewCompactJSONHandler(&buf, nil)
+	handler := NewCompactJSONHandler(&buf, &slog.HandlerOptions{})
 	record := slog.NewRecord(time.Time{}, slog.LevelInfo, "without time", 0)
 
 	if err := handler.Handle(context.Background(), record); err != nil {
@@ -368,7 +378,7 @@ func TestCompactJSONHandlerDoesNotEmitEmptyGroupsAfterReplaceAttrDropsChildren(t
 
 func TestCompactJSONHandlerMergesDuplicateGroupsInsideWithGroup(t *testing.T) {
 	var buf bytes.Buffer
-	handler := NewCompactJSONHandler(&buf, nil).WithGroup("outer")
+	handler := NewCompactJSONHandler(&buf, &slog.HandlerOptions{}).WithGroup("outer")
 	record := slog.NewRecord(time.Date(2026, 5, 19, 0, 0, 0, 0, time.UTC), slog.LevelInfo, "duplicate groups", 0)
 	record.AddAttrs(
 		slog.Group("inner", slog.Int("a", 1)),
@@ -398,7 +408,7 @@ func TestCompactJSONHandlerMergesDuplicateGroupsInsideWithGroup(t *testing.T) {
 
 func TestCompactJSONHandlerHandlesTypedNilSpecialValues(t *testing.T) {
 	var buf bytes.Buffer
-	handler := NewCompactJSONHandler(&buf, nil)
+	handler := NewCompactJSONHandler(&buf, &slog.HandlerOptions{})
 	var source *slog.Source
 	var err *typedNilError
 	record := slog.NewRecord(time.Date(2026, 5, 19, 0, 0, 0, 0, time.UTC), slog.LevelInfo, "typed nils", 0)
@@ -422,7 +432,7 @@ func TestCompactJSONHandlerHandlesTypedNilSpecialValues(t *testing.T) {
 
 func TestCompactJSONHandlerResolvesLogValuerAttrs(t *testing.T) {
 	var buf bytes.Buffer
-	handler := NewCompactJSONHandler(&buf, nil)
+	handler := NewCompactJSONHandler(&buf, &slog.HandlerOptions{})
 	record := slog.NewRecord(time.Date(2026, 5, 19, 0, 0, 0, 0, time.UTC), slog.LevelInfo, "log valuer", 0)
 	record.AddAttrs(
 		slog.Any("token", redactedLogValue{secret: "secret"}),
@@ -478,7 +488,7 @@ func (e *typedNilError) Error() string {
 func TestCompactJSONHandlerMarshalsJSONSafeAnyValuesOnce(t *testing.T) {
 	var buf bytes.Buffer
 	calls := 0
-	handler := NewCompactJSONHandler(&buf, nil)
+	handler := NewCompactJSONHandler(&buf, &slog.HandlerOptions{})
 	record := slog.NewRecord(time.Date(2026, 5, 19, 0, 0, 0, 0, time.UTC), slog.LevelInfo, "custom json", 0)
 	record.AddAttrs(slog.Any("custom", countingJSONValue{calls: &calls}))
 

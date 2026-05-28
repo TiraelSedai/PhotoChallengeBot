@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/TiraelSedai/PhotoChallengeBot/internal/require"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -60,39 +61,21 @@ type Router struct {
 }
 
 func NewRouter(cfg Config) *Router {
-	botUsername := cfg.BotUsername
-	if botUsername == nil {
-		botUsername = func() string { return "" }
-	}
-	mainChatHandler := cfg.MainChatHandler
-	if mainChatHandler == nil {
-		mainChatHandler = noOpHandler{}
-	}
-	adminChatHandler := cfg.AdminChatHandler
-	if adminChatHandler == nil {
-		adminChatHandler = noOpHandler{}
-	}
-	privateStartHandler := cfg.PrivateStartHandler
-	if privateStartHandler == nil {
-		privateStartHandler = noOpHandler{}
-	}
-	callbackHandler := cfg.CallbackHandler
-	if callbackHandler == nil {
-		callbackHandler = noOpHandler{}
-	}
-	onError := cfg.OnError
-	if onError == nil {
-		onError = func(context.Context, *models.Update, error) {}
-	}
+	require.NotNil("bot username provider", cfg.BotUsername)
+	require.NotNil("main chat handler", cfg.MainChatHandler)
+	require.NotNil("admin chat handler", cfg.AdminChatHandler)
+	require.NotNil("private start handler", cfg.PrivateStartHandler)
+	require.NotNil("callback handler", cfg.CallbackHandler)
+	require.NotNil("error handler", cfg.OnError)
 	return &Router{
 		mainChatID:          cfg.MainChatID,
 		adminChatID:         cfg.AdminChatID,
-		botUsername:         botUsername,
-		mainChatHandler:     mainChatHandler,
-		adminChatHandler:    adminChatHandler,
-		privateStartHandler: privateStartHandler,
-		callbackHandler:     callbackHandler,
-		onError:             onError,
+		botUsername:         cfg.BotUsername,
+		mainChatHandler:     cfg.MainChatHandler,
+		adminChatHandler:    cfg.AdminChatHandler,
+		privateStartHandler: cfg.PrivateStartHandler,
+		callbackHandler:     cfg.CallbackHandler,
+		onError:             cfg.OnError,
 	}
 }
 
@@ -134,24 +117,6 @@ func (r *Router) Route(ctx context.Context, update *models.Update) error {
 
 func (r *Router) currentBotUsername() string {
 	return r.botUsername()
-}
-
-type noOpHandler struct{}
-
-func (noOpHandler) HandleMainChatMessage(context.Context, *models.Message) error {
-	return nil
-}
-
-func (noOpHandler) HandleAdminChatMessage(context.Context, *models.Message) error {
-	return nil
-}
-
-func (noOpHandler) HandlePrivateStart(context.Context, *models.Message, string) error {
-	return nil
-}
-
-func (noOpHandler) HandleCallbackQuery(context.Context, *models.CallbackQuery) error {
-	return nil
 }
 
 func isPrivateStart(message *models.Message, botUsername string) bool {

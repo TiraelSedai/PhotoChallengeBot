@@ -15,7 +15,7 @@ import (
 )
 
 func main() {
-	log := slog.New(logger.NewCompactJSONHandler(os.Stderr, nil))
+	log := slog.New(logger.NewCompactJSONHandler(os.Stderr, &slog.HandlerOptions{}))
 	slog.SetDefault(log)
 
 	cfg, err := config.Load()

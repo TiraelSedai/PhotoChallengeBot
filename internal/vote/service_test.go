@@ -51,6 +51,24 @@ func TestHandlePrivateStartCreatesAndReusesVoteOrder(t *testing.T) {
 	}
 }
 
+func TestNewServicePanicsOnNilRand(t *testing.T) {
+	database := openVoteTestDB(t)
+	defer database.Close()
+	defer func() {
+		if recover() == nil {
+			t.Fatal("NewService() did not panic")
+		}
+	}()
+	NewService(Config{
+		Challenges: repository.NewChallenges(database),
+		Users:      repository.NewUsers(database),
+		Photos:     repository.NewPhotos(database),
+		Votes:      repository.NewVotes(database),
+		Publisher:  &recordingPublisher{},
+		Now:        func() time.Time { return testVoteTime(19 * 24 * time.Hour) },
+	})
+}
+
 func TestHandlePrivateStartRejectsInvalidOrFinishedToken(t *testing.T) {
 	database := openVoteTestDB(t)
 	defer database.Close()

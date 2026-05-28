@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand"
+	"time"
 
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/admin"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/bot"
@@ -13,6 +15,7 @@ import (
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/db"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/photo"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/repository"
+	"github.com/TiraelSedai/PhotoChallengeBot/internal/require"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/results"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/scheduler"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/templates"
@@ -43,9 +46,8 @@ type App struct {
 }
 
 func New(cfg config.Config, logger *slog.Logger) *App {
-	if logger == nil {
-		logger = slog.Default()
-	}
+	require.NotNil("logger", logger)
+	require.NotNil("location", cfg.Location)
 	return &App{
 		config:        cfg,
 		logger:        logger,
@@ -92,6 +94,7 @@ func (a *App) Run(ctx context.Context) error {
 		return err
 	}
 
+	now := func() time.Time { return time.Now().UTC() }
 	challenges := repository.NewChallenges(database)
 	users := repository.NewUsers(database)
 	photos := repository.NewPhotos(database)
@@ -104,6 +107,7 @@ func (a *App) Run(ctx context.Context) error {
 		Users:      users,
 		Renderer:   renderer,
 		Publisher:  telegramRunner,
+		Now:        now,
 	})
 	topicReporter := topic.NewReporter(topic.ReportConfig{
 		AdminChatID: a.config.AdminChatID,
@@ -111,6 +115,7 @@ func (a *App) Run(ctx context.Context) error {
 		Suggestions: topicSuggestions,
 		Users:       users,
 		Publisher:   telegramRunner,
+		Now:         now,
 	})
 	createChallengeHandler := admin.NewCreateChallengeHandler(admin.CreateChallengeConfig{
 		AdminChatID:   a.config.AdminChatID,
@@ -118,7 +123,7 @@ func (a *App) Run(ctx context.Context) error {
 		Location:      a.config.Location,
 		Sessions:      repository.NewAdminSessions(database),
 		Users:         users,
-		Challenges:    challenge.NewService(challenges, a.config.Location),
+		Challenges:    challenge.NewService(challenges, a.config.Location, now),
 		Announcements: challenges,
 		Renderer:      renderer,
 		Publisher:     telegramRunner,
@@ -140,6 +145,7 @@ func (a *App) Run(ctx context.Context) error {
 		Results:     resultsPublisher,
 		Topics:      topicReporter,
 		BotUsername: telegramRunner.Username,
+		Now:         now,
 	})
 	adminHandler := admin.NewRouter(admin.RouterConfig{
 		DeletePhoto:     deletePhotoHandler,
@@ -152,12 +158,14 @@ func (a *App) Run(ctx context.Context) error {
 		Users:      users,
 		Photos:     photos,
 		Publisher:  telegramRunner,
+		Now:        now,
 	})
 	topicHandler := topic.NewService(topic.Config{
 		MainChatID:  a.config.MainChatID,
 		Challenges:  challenges,
 		Users:       users,
 		Suggestions: topicSuggestions,
+		Now:         now,
 	})
 	voteHandler := vote.NewService(vote.Config{
 		Challenges: challenges,
@@ -165,6 +173,8 @@ func (a *App) Run(ctx context.Context) error {
 		Photos:     photos,
 		Votes:      votes,
 		Publisher:  telegramRunner,
+		Now:        now,
+		Rand:       rand.New(rand.NewSource(time.Now().UnixNano())),
 	})
 
 	router = bot.NewRouter(bot.Config{
@@ -175,6 +185,9 @@ func (a *App) Run(ctx context.Context) error {
 		AdminChatHandler:    adminHandler,
 		PrivateStartHandler: voteHandler,
 		CallbackHandler:     voteHandler,
+		OnError: func(ctx context.Context, update *models.Update, err error) {
+			a.logger.ErrorContext(ctx, "route telegram update", "error", err)
+		},
 	})
 
 	schedulerLoop := scheduler.New(scheduler.Config{
@@ -186,6 +199,7 @@ func (a *App) Run(ctx context.Context) error {
 		Topics:      topicReporter,
 		Publisher:   telegramRunner,
 		Logger:      a.logger,
+		Now:         now,
 		BotUsername: telegramRunner.Username,
 		Location:    a.config.Location,
 	})

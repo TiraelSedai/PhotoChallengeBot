@@ -6,6 +6,7 @@ import (
 
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/hashtag"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/repository"
+	"github.com/TiraelSedai/PhotoChallengeBot/internal/require"
 	"github.com/go-telegram/bot/models"
 )
 
@@ -49,21 +50,14 @@ type Config struct {
 }
 
 func NewService(cfg Config) *Service {
-	now := cfg.Now
-	if now == nil {
-		now = time.Now
-	}
+	require.NotNil("challenge repository", cfg.Challenges)
+	require.NotNil("user repository", cfg.Users)
+	require.NotNil("photo repository", cfg.Photos)
+	require.NotNil("photo publisher", cfg.Publisher)
+	require.NotNil("clock", cfg.Now)
 	switch {
 	case cfg.MainChatID == 0:
 		panic("main chat id is required")
-	case cfg.Challenges == nil:
-		panic("challenge repository is nil")
-	case cfg.Users == nil:
-		panic("user repository is nil")
-	case cfg.Photos == nil:
-		panic("photo repository is nil")
-	case cfg.Publisher == nil:
-		panic("photo publisher is nil")
 	}
 	return &Service{
 		mainChatID: cfg.MainChatID,
@@ -71,7 +65,7 @@ func NewService(cfg Config) *Service {
 		users:      cfg.Users,
 		photos:     cfg.Photos,
 		publisher:  cfg.Publisher,
-		now:        now,
+		now:        cfg.Now,
 	}
 }
 

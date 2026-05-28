@@ -38,6 +38,22 @@ func TestServiceAcceptsFirstPhotoWithChallengeHashtag(t *testing.T) {
 	}
 }
 
+func TestNewServicePanicsOnNilClock(t *testing.T) {
+	store := newPhotoTestStore(activeChallenge(time.Date(2026, 5, 18, 12, 0, 0, 0, time.UTC), "#tag"))
+	defer func() {
+		if recover() == nil {
+			t.Fatal("NewService() did not panic")
+		}
+	}()
+	NewService(Config{
+		MainChatID: 1001,
+		Challenges: store,
+		Users:      store,
+		Photos:     store,
+		Publisher:  &recordingPublisher{},
+	})
+}
+
 func TestServiceReplacesExistingPhoto(t *testing.T) {
 	now := time.Date(2026, 5, 18, 12, 0, 0, 0, time.UTC)
 	store := newPhotoTestStore(activeChallenge(now, "#tag"))

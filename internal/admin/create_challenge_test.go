@@ -66,6 +66,33 @@ func TestCreateChallengeFlowPublishesAndPinsDefaultAnnouncement(t *testing.T) {
 	}
 }
 
+func TestNewCreateChallengeHandlerPanicsOnNilBotUsername(t *testing.T) {
+	database := openAdminTestDB(t)
+	defer database.Close()
+	location := mustAdminLocation(t)
+	renderer, err := templates.Load(filepath.Join("..", "..", "templates"))
+	if err != nil {
+		t.Fatalf("Load templates: %v", err)
+	}
+	challengeRepo := repository.NewChallenges(database)
+	defer func() {
+		if recover() == nil {
+			t.Fatal("NewCreateChallengeHandler() did not panic")
+		}
+	}()
+	NewCreateChallengeHandler(CreateChallengeConfig{
+		AdminChatID:   -2002,
+		MainChatID:    -1001,
+		Location:      location,
+		Sessions:      repository.NewAdminSessions(database),
+		Users:         repository.NewUsers(database),
+		Challenges:    challenge.NewService(challengeRepo, location, time.Now),
+		Announcements: challengeRepo,
+		Renderer:      renderer,
+		Publisher:     &recordingPublisher{},
+	})
+}
+
 func TestCreateChallengeFlowUsesCustomApprovedText(t *testing.T) {
 	t.Parallel()
 
@@ -578,7 +605,7 @@ func newAdminTestHandlerWithAnnouncements(
 		Location:      location,
 		Sessions:      repository.NewAdminSessions(database),
 		Users:         repository.NewUsers(database),
-		Challenges:    challenge.NewService(challengeRepo, location),
+		Challenges:    challenge.NewService(challengeRepo, location, time.Now),
 		Announcements: announcements,
 		Renderer:      renderer,
 		Publisher:     publisher,

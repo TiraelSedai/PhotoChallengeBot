@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+
+	"github.com/TiraelSedai/PhotoChallengeBot/internal/require"
 )
 
 type CompactJSONHandler struct {
@@ -27,12 +29,8 @@ type scopedAttr struct {
 }
 
 func NewCompactJSONHandler(w io.Writer, opts *slog.HandlerOptions) *CompactJSONHandler {
-	if w == nil {
-		panic("logger: nil writer")
-	}
-	if opts == nil {
-		opts = &slog.HandlerOptions{}
-	}
+	require.NotNil("logger writer", w)
+	require.NotNil("logger handler options", opts)
 	optsCopy := *opts
 	return &CompactJSONHandler{
 		writer: w,

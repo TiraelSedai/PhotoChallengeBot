@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/repository"
+	"github.com/TiraelSedai/PhotoChallengeBot/internal/require"
 	"github.com/go-telegram/bot/models"
 )
 
@@ -58,35 +59,21 @@ type FinishVoteHandler struct {
 }
 
 func NewFinishVoteHandler(cfg FinishVoteConfig) *FinishVoteHandler {
-	now := cfg.Now
-	if now == nil {
-		now = func() time.Time { return time.Now().UTC() }
-	}
-	botUsername := cfg.BotUsername
-	if botUsername == nil {
-		botUsername = func() string { return "" }
-	}
-	topics := cfg.Topics
-	if topics == nil {
-		topics = noOpFinishVoteTopics{}
-	}
-	switch {
-	case cfg.Challenges == nil:
-		panic("finish vote challenges repository is nil")
-	case cfg.Publisher == nil:
-		panic("finish vote publisher is nil")
-	case cfg.Results == nil:
-		panic("finish vote results publisher is nil")
-	}
+	require.NotNil("finish vote challenges repository", cfg.Challenges)
+	require.NotNil("finish vote publisher", cfg.Publisher)
+	require.NotNil("finish vote results publisher", cfg.Results)
+	require.NotNil("finish vote topics publisher", cfg.Topics)
+	require.NotNil("bot username provider", cfg.BotUsername)
+	require.NotNil("clock", cfg.Now)
 	return &FinishVoteHandler{
 		adminChatID: cfg.AdminChatID,
 		mainChatID:  cfg.MainChatID,
 		challenges:  cfg.Challenges,
 		publisher:   cfg.Publisher,
 		results:     cfg.Results,
-		topics:      topics,
-		botUsername: botUsername,
-		now:         now,
+		topics:      cfg.Topics,
+		botUsername: cfg.BotUsername,
+		now:         cfg.Now,
 	}
 }
 
@@ -159,10 +146,4 @@ func isFinishVoteCommand(text string, botUsername string) bool {
 	return command == "/finish_vote" ||
 		command == "/finish_voting" ||
 		normalized == "завершить голосование"
-}
-
-type noOpFinishVoteTopics struct{}
-
-func (noOpFinishVoteTopics) PublishOne(context.Context, repository.Challenge) error {
-	return nil
 }

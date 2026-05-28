@@ -32,6 +32,44 @@ func TestRouterDispatchesMainChatMessage(t *testing.T) {
 	}
 }
 
+func TestNewRouterPanicsOnNilErrorHandler(t *testing.T) {
+	recorder := &recordingHandlers{}
+	defer func() {
+		if recover() == nil {
+			t.Fatal("NewRouter() did not panic")
+		}
+	}()
+	NewRouter(Config{
+		MainChatID:          1001,
+		AdminChatID:         2002,
+		BotUsername:         func() string { return "PhotoChallengeBot" },
+		MainChatHandler:     recorder,
+		AdminChatHandler:    recorder,
+		PrivateStartHandler: recorder,
+		CallbackHandler:     recorder,
+	})
+}
+
+func TestNewRouterPanicsOnTypedNilMainChatHandler(t *testing.T) {
+	var mainChatHandler *recordingHandlers
+	recorder := &recordingHandlers{}
+	defer func() {
+		if recover() == nil {
+			t.Fatal("NewRouter() did not panic")
+		}
+	}()
+	NewRouter(Config{
+		MainChatID:          1001,
+		AdminChatID:         2002,
+		BotUsername:         func() string { return "PhotoChallengeBot" },
+		MainChatHandler:     mainChatHandler,
+		AdminChatHandler:    recorder,
+		PrivateStartHandler: recorder,
+		CallbackHandler:     recorder,
+		OnError:             func(context.Context, *models.Update, error) {},
+	})
+}
+
 func TestRouterDispatchesAdminChatMessage(t *testing.T) {
 	recorder := &recordingHandlers{}
 	router := newTestRouter(recorder)
@@ -187,8 +225,15 @@ func TestHandlerFuncReportsRouteError(t *testing.T) {
 	recorder := &recordingHandlers{err: wantErr}
 	var gotErr error
 	router := NewRouter(Config{
-		MainChatID:      1001,
-		MainChatHandler: recorder,
+		MainChatID:  1001,
+		AdminChatID: 2002,
+		BotUsername: func() string {
+			return "PhotoChallengeBot"
+		},
+		MainChatHandler:     recorder,
+		AdminChatHandler:    recorder,
+		PrivateStartHandler: recorder,
+		CallbackHandler:     recorder,
 		OnError: func(_ context.Context, _ *models.Update, err error) {
 			gotErr = err
 		},
@@ -256,6 +301,7 @@ func newTestRouter(recorder *recordingHandlers) *Router {
 		AdminChatHandler:    recorder,
 		PrivateStartHandler: recorder,
 		CallbackHandler:     recorder,
+		OnError:             func(context.Context, *models.Update, error) {},
 	})
 }
 

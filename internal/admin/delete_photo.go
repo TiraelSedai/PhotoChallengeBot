@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/repository"
+	"github.com/TiraelSedai/PhotoChallengeBot/internal/require"
 	"github.com/go-telegram/bot/models"
 )
 
@@ -43,21 +44,15 @@ type DeletePhotoConfig struct {
 }
 
 func NewDeletePhotoHandler(cfg DeletePhotoConfig) *DeletePhotoHandler {
-	botUsername := cfg.BotUsername
-	if botUsername == nil {
-		botUsername = func() string { return "" }
-	}
+	require.NotNil("open challenge finder", cfg.Challenges)
+	require.NotNil("photo deleter", cfg.Photos)
+	require.NotNil("delete photo publisher", cfg.Publisher)
+	require.NotNil("bot username provider", cfg.BotUsername)
 	switch {
 	case cfg.AdminChatID == 0:
 		panic("admin chat id is required")
 	case cfg.MainChatID == 0:
 		panic("main chat id is required")
-	case cfg.Challenges == nil:
-		panic("open challenge finder is nil")
-	case cfg.Photos == nil:
-		panic("photo deleter is nil")
-	case cfg.Publisher == nil:
-		panic("delete photo publisher is nil")
 	}
 	return &DeletePhotoHandler{
 		adminChatID: cfg.AdminChatID,
@@ -65,7 +60,7 @@ func NewDeletePhotoHandler(cfg DeletePhotoConfig) *DeletePhotoHandler {
 		challenges:  cfg.Challenges,
 		photos:      cfg.Photos,
 		publisher:   cfg.Publisher,
-		botUsername: botUsername,
+		botUsername: cfg.BotUsername,
 	}
 }
 

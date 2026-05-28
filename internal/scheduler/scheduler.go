@@ -9,6 +9,7 @@ import (
 
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/challenge"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/repository"
+	"github.com/TiraelSedai/PhotoChallengeBot/internal/require"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/templates"
 )
 
@@ -97,10 +98,16 @@ type Scheduler struct {
 }
 
 func New(config Config) *Scheduler {
-	now := config.Now
-	if now == nil {
-		now = func() time.Time { return time.Now().UTC() }
-	}
+	require.NotNil("scheduler challenges repository", config.Challenges)
+	require.NotNil("scheduler photo counter", config.Photos)
+	require.NotNil("scheduler vote start renderer", config.Renderer)
+	require.NotNil("scheduler publisher", config.Publisher)
+	require.NotNil("scheduler results publisher", config.Results)
+	require.NotNil("scheduler topic reporter", config.Topics)
+	require.NotNil("scheduler logger", config.Logger)
+	require.NotNil("clock", config.Now)
+	require.NotNil("bot username provider", config.BotUsername)
+	require.NotNil("location", config.Location)
 	interval := config.Interval
 	if interval <= 0 {
 		interval = defaultInterval
@@ -117,48 +124,18 @@ func New(config Config) *Scheduler {
 	if sendFor <= 0 {
 		sendFor = defaultSendTimeout
 	}
-	logger := config.Logger
-	if logger == nil {
-		logger = slog.Default()
-	}
-	location := config.Location
-	if location == nil {
-		location = time.UTC
-	}
-	botUsername := config.BotUsername
-	if botUsername == nil {
-		botUsername = func() string { return "" }
-	}
-	results := config.Results
-	if results == nil {
-		results = noOpResultsPublisher{}
-	}
-	topics := config.Topics
-	if topics == nil {
-		topics = noOpTopicReporter{}
-	}
-	switch {
-	case config.Challenges == nil:
-		panic("scheduler challenges repository is nil")
-	case config.Photos == nil:
-		panic("scheduler photo counter is nil")
-	case config.Renderer == nil:
-		panic("scheduler vote start renderer is nil")
-	case config.Publisher == nil:
-		panic("scheduler publisher is nil")
-	}
 
 	return &Scheduler{
 		challenges:  config.Challenges,
 		photos:      config.Photos,
 		renderer:    config.Renderer,
-		results:     results,
-		topics:      topics,
+		results:     config.Results,
+		topics:      config.Topics,
 		publisher:   config.Publisher,
-		logger:      logger,
-		now:         now,
-		botUsername: botUsername,
-		location:    location,
+		logger:      config.Logger,
+		now:         config.Now,
+		botUsername: config.BotUsername,
+		location:    config.Location,
 		interval:    interval,
 		batchSize:   batchSize,
 		mainChatID:  config.MainChatID,
@@ -500,16 +477,4 @@ func (s *Scheduler) persistenceContext(ctx context.Context) (context.Context, co
 		return context.WithTimeout(context.Background(), s.persistFor)
 	}
 	return context.WithTimeout(context.WithoutCancel(ctx), s.persistFor)
-}
-
-type noOpResultsPublisher struct{}
-
-func (noOpResultsPublisher) PublishDue(context.Context, int64, int) error {
-	return nil
-}
-
-type noOpTopicReporter struct{}
-
-func (noOpTopicReporter) PublishDue(context.Context, int64, int) error {
-	return nil
 }

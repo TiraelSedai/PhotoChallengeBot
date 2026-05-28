@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/repository"
+	"github.com/TiraelSedai/PhotoChallengeBot/internal/require"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/templates"
 )
 
@@ -82,27 +83,16 @@ type PublishConfig struct {
 }
 
 func NewPublisher(cfg PublishConfig) *PublisherService {
-	now := cfg.Now
-	if now == nil {
-		now = func() time.Time { return time.Now().UTC() }
-	}
+	require.NotNil("results challenge repository", cfg.Challenges)
+	require.NotNil("results photo repository", cfg.Photos)
+	require.NotNil("results vote repository", cfg.Votes)
+	require.NotNil("results user repository", cfg.Users)
+	require.NotNil("results renderer", cfg.Renderer)
+	require.NotNil("results publisher", cfg.Publisher)
+	require.NotNil("clock", cfg.Now)
 	sendFor := cfg.SendTimeout
 	if sendFor <= 0 {
 		sendFor = defaultSendTimeout
-	}
-	switch {
-	case cfg.Challenges == nil:
-		panic("results challenge repository is nil")
-	case cfg.Photos == nil:
-		panic("results photo repository is nil")
-	case cfg.Votes == nil:
-		panic("results vote repository is nil")
-	case cfg.Users == nil:
-		panic("results user repository is nil")
-	case cfg.Renderer == nil:
-		panic("results renderer is nil")
-	case cfg.Publisher == nil:
-		panic("results publisher is nil")
 	}
 	return &PublisherService{
 		challenges: cfg.Challenges,
@@ -111,7 +101,7 @@ func NewPublisher(cfg PublishConfig) *PublisherService {
 		users:      cfg.Users,
 		renderer:   cfg.Renderer,
 		publisher:  cfg.Publisher,
-		now:        now,
+		now:        cfg.Now,
 		sendFor:    sendFor,
 	}
 }

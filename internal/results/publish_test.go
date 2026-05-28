@@ -63,6 +63,28 @@ func TestPublisherPublishesPinsResultsAndSendsAchievement(t *testing.T) {
 	}
 }
 
+func TestNewPublisherPanicsOnNilClock(t *testing.T) {
+	database := openResultsTestDB(t)
+	defer database.Close()
+	renderer, err := templates.Load(filepath.Join("..", "..", "templates"))
+	if err != nil {
+		t.Fatalf("load templates: %v", err)
+	}
+	defer func() {
+		if recover() == nil {
+			t.Fatal("NewPublisher() did not panic")
+		}
+	}()
+	NewPublisher(PublishConfig{
+		Challenges: repository.NewChallenges(database),
+		Photos:     repository.NewPhotos(database),
+		Votes:      repository.NewVotes(database),
+		Users:      repository.NewUsers(database),
+		Renderer:   renderer,
+		Publisher:  &recordingResultsPublisher{},
+	})
+}
+
 func TestPublisherRetriesExistingResultsPinWithoutDuplicateMessage(t *testing.T) {
 	database := openResultsTestDB(t)
 	defer database.Close()

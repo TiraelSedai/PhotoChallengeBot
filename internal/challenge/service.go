@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/repository"
+	"github.com/TiraelSedai/PhotoChallengeBot/internal/require"
 )
 
 const (
@@ -44,17 +45,14 @@ type Plan struct {
 	CreatedAt     time.Time
 }
 
-func NewService(store Store, location *time.Location) *Service {
-	if store == nil {
-		panic("challenge store is nil")
-	}
-	if location == nil {
-		location = time.UTC
-	}
+func NewService(store Store, location *time.Location, now func() time.Time) *Service {
+	require.NotNil("challenge store", store)
+	require.NotNil("location", location)
+	require.NotNil("clock", now)
 	return &Service{
 		store:    store,
 		location: location,
-		now:      time.Now,
+		now:      now,
 	}
 }
 

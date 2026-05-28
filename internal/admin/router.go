@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 
+	"github.com/TiraelSedai/PhotoChallengeBot/internal/require"
 	"github.com/go-telegram/bot/models"
 )
 
@@ -33,22 +34,13 @@ type FinishVoteCommandHandler interface {
 }
 
 func NewRouter(cfg RouterConfig) *Router {
-	deletePhoto := cfg.DeletePhoto
-	if deletePhoto == nil {
-		deletePhoto = noOpCommandHandler{}
-	}
-	finishVote := cfg.FinishVote
-	if finishVote == nil {
-		finishVote = noOpCommandHandler{}
-	}
-	createChallenge := cfg.CreateChallenge
-	if createChallenge == nil {
-		createChallenge = noOpCommandHandler{}
-	}
+	require.NotNil("delete photo handler", cfg.DeletePhoto)
+	require.NotNil("finish vote handler", cfg.FinishVote)
+	require.NotNil("create challenge handler", cfg.CreateChallenge)
 	return &Router{
-		deletePhoto:     deletePhoto,
-		finishVote:      finishVote,
-		createChallenge: createChallenge,
+		deletePhoto:     cfg.DeletePhoto,
+		finishVote:      cfg.FinishVote,
+		createChallenge: cfg.CreateChallenge,
 	}
 }
 
@@ -63,14 +55,4 @@ func (r *Router) HandleAdminChatMessage(ctx context.Context, message *models.Mes
 		return r.finishVote.HandleAdminChatMessage(ctx, message)
 	}
 	return r.createChallenge.HandleAdminChatMessage(ctx, message)
-}
-
-type noOpCommandHandler struct{}
-
-func (noOpCommandHandler) HandleAdminChatMessage(context.Context, *models.Message) error {
-	return nil
-}
-
-func (noOpCommandHandler) Handles(string) bool {
-	return false
 }

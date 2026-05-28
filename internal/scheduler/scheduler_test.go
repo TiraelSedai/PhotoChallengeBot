@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -71,6 +72,27 @@ func TestTickSendsReminderOnce(t *testing.T) {
 	if len(publisher.messages) != 1 {
 		t.Fatalf("sent reminders after second tick = %d, want 1", len(publisher.messages))
 	}
+}
+
+func TestNewPanicsOnNilResultsPublisher(t *testing.T) {
+	database := openSchedulerTestDB(t)
+	defer database.Close()
+	defer func() {
+		if recover() == nil {
+			t.Fatal("New() did not panic")
+		}
+	}()
+	New(Config{
+		Challenges:  repository.NewChallenges(database),
+		Photos:      repository.NewPhotos(database),
+		Renderer:    voteStartRenderer{},
+		Publisher:   &recordingPublisher{},
+		Topics:      &recordingTopicReporter{},
+		Logger:      slog.Default(),
+		Now:         func() time.Time { return testTime(48 * time.Hour) },
+		BotUsername: func() string { return "PhotoChallengeBot" },
+		Location:    time.UTC,
+	})
 }
 
 func TestTickScopesWorkToConfiguredMainChat(t *testing.T) {
@@ -1161,10 +1183,28 @@ func newTestScheduler(database *sqlx.DB, config Config) *Scheduler {
 	if config.Renderer == nil {
 		config.Renderer = voteStartRenderer{}
 	}
+	if config.Results == nil {
+		config.Results = &recordingResultsPublisher{}
+	}
+	if config.Topics == nil {
+		config.Topics = &recordingTopicReporter{}
+	}
+	if config.Publisher == nil {
+		config.Publisher = &recordingPublisher{}
+	}
+	if config.Logger == nil {
+		config.Logger = slog.Default()
+	}
+	if config.Now == nil {
+		config.Now = func() time.Time { return testTime(48 * time.Hour) }
+	}
 	if config.BotUsername == nil {
 		config.BotUsername = func() string {
 			return "PhotoChallengeBot"
 		}
+	}
+	if config.Location == nil {
+		config.Location = time.UTC
 	}
 	return New(config)
 }
@@ -1326,6 +1366,18 @@ type recordingTopicReporter struct {
 }
 
 func (r *recordingTopicReporter) PublishDue(_ context.Context, mainChatID int64, limit int) error {
+	r.mainChatID = mainChatID
+	r.limit = limit
+	return r.err
+}
+
+type recordingResultsPublisher struct {
+	mainChatID int64
+	limit      int
+	err        error
+}
+
+func (r *recordingResultsPublisher) PublishDue(_ context.Context, mainChatID int64, limit int) error {
 	r.mainChatID = mainChatID
 	r.limit = limit
 	return r.err

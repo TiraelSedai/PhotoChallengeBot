@@ -10,8 +10,9 @@ import (
 
 func TestAdminRouterRoutesDeletePhotoBeforeCreateChallenge(t *testing.T) {
 	deletePhoto := &recordingDeletePhotoHandler{recordingAdminHandler: recordingAdminHandler{name: "delete"}}
+	finishVote := &recordingFinishVoteHandler{}
 	createChallenge := &recordingAdminHandler{name: "create"}
-	router := NewRouter(RouterConfig{DeletePhoto: deletePhoto, CreateChallenge: createChallenge})
+	router := NewRouter(RouterConfig{DeletePhoto: deletePhoto, FinishVote: finishVote, CreateChallenge: createChallenge})
 
 	if err := router.HandleAdminChatMessage(context.Background(), adminMessage("/delete_photo @author")); err != nil {
 		t.Fatalf("HandleAdminChatMessage() error = %v", err)
@@ -25,10 +26,22 @@ func TestAdminRouterRoutesDeletePhotoBeforeCreateChallenge(t *testing.T) {
 	}
 }
 
-func TestAdminRouterRoutesOtherMessagesToCreateChallenge(t *testing.T) {
+func TestNewRouterPanicsOnNilFinishVoteHandler(t *testing.T) {
 	deletePhoto := &recordingDeletePhotoHandler{recordingAdminHandler: recordingAdminHandler{name: "delete"}}
 	createChallenge := &recordingAdminHandler{name: "create"}
-	router := NewRouter(RouterConfig{DeletePhoto: deletePhoto, CreateChallenge: createChallenge})
+	defer func() {
+		if recover() == nil {
+			t.Fatal("NewRouter() did not panic")
+		}
+	}()
+	NewRouter(RouterConfig{DeletePhoto: deletePhoto, CreateChallenge: createChallenge})
+}
+
+func TestAdminRouterRoutesOtherMessagesToCreateChallenge(t *testing.T) {
+	deletePhoto := &recordingDeletePhotoHandler{recordingAdminHandler: recordingAdminHandler{name: "delete"}}
+	finishVote := &recordingFinishVoteHandler{}
+	createChallenge := &recordingAdminHandler{name: "create"}
+	router := NewRouter(RouterConfig{DeletePhoto: deletePhoto, FinishVote: finishVote, CreateChallenge: createChallenge})
 
 	if err := router.HandleAdminChatMessage(context.Background(), adminMessage("/challenge")); err != nil {
 		t.Fatalf("HandleAdminChatMessage() error = %v", err)
@@ -59,4 +72,12 @@ type recordingDeletePhotoHandler struct {
 func (h *recordingDeletePhotoHandler) Handles(text string) bool {
 	_, handled, _ := parseDeletePhotoCommand(text, "PhotoChallengeBot")
 	return handled
+}
+
+type recordingFinishVoteHandler struct {
+	recordingAdminHandler
+}
+
+func (h *recordingFinishVoteHandler) Handles(string) bool {
+	return false
 }

@@ -47,6 +47,22 @@ func TestReporterPublishesSuggestionsToAdmin(t *testing.T) {
 	}
 }
 
+func TestNewReporterPanicsOnNilClock(t *testing.T) {
+	store := newTopicReportStore(repository.Challenge{})
+	defer func() {
+		if recover() == nil {
+			t.Fatal("NewReporter() did not panic")
+		}
+	}()
+	NewReporter(ReportConfig{
+		AdminChatID: 2002,
+		Challenges:  store,
+		Suggestions: store,
+		Users:       store,
+		Publisher:   &recordingTopicPublisher{},
+	})
+}
+
 func TestReporterPublishesEmptySuggestionReport(t *testing.T) {
 	now := time.Date(2026, 5, 22, 12, 0, 0, 0, time.UTC)
 	challenge := votingChallenge(now)

@@ -14,10 +14,9 @@ func TestCreateActiveUsesDefaultDatesInMoscow(t *testing.T) {
 
 	location := mustLoadLocation(t, "Europe/Moscow")
 	store := &recordingStore{nextNum: 7}
-	service := NewService(store, location)
-	service.now = func() time.Time {
+	service := NewService(store, location, func() time.Time {
 		return time.Date(2026, 5, 1, 11, 30, 0, 0, location)
-	}
+	})
 
 	challenge, err := service.CreateActive(context.Background(), CreateInput{
 		MainChatID:      -1001,
@@ -50,15 +49,36 @@ func TestCreateActiveUsesDefaultDatesInMoscow(t *testing.T) {
 	}
 }
 
+func TestNewServicePanicsOnNilLocation(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("NewService() did not panic")
+		}
+	}()
+	NewService(&recordingStore{}, nil, time.Now)
+}
+
+func TestNewServicePanicsOnNilClock(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("NewService() did not panic")
+		}
+	}()
+	NewService(&recordingStore{}, time.UTC, nil)
+}
+
 func TestPlanDoesNotCreateChallenge(t *testing.T) {
 	t.Parallel()
 
 	location := mustLoadLocation(t, "Europe/Moscow")
 	store := &recordingStore{nextNum: 3}
-	service := NewService(store, location)
-	service.now = func() time.Time {
+	service := NewService(store, location, func() time.Time {
 		return time.Date(2026, 5, 1, 11, 30, 0, 0, location)
-	}
+	})
 
 	plan, err := service.Plan(context.Background(), CreateInput{
 		MainChatID:      -1001,
@@ -84,10 +104,9 @@ func TestCreateActiveUsesCustomDates(t *testing.T) {
 	start := time.Date(2026, 6, 3, 15, 0, 0, 0, location)
 	end := time.Date(2026, 6, 10, 9, 0, 0, 0, location)
 	store := &recordingStore{nextNum: 1}
-	service := NewService(store, location)
-	service.now = func() time.Time {
+	service := NewService(store, location, func() time.Time {
 		return time.Date(2026, 5, 18, 12, 0, 0, 0, location)
-	}
+	})
 
 	challenge, err := service.CreateActive(context.Background(), CreateInput{
 		MainChatID:      -1001,
@@ -117,7 +136,7 @@ func TestCreateActiveRejectsExistingOpenChallenge(t *testing.T) {
 	store := &recordingStore{
 		open: &repository.Challenge{ID: 42, State: repository.ChallengeStateVoting},
 	}
-	service := NewService(store, time.UTC)
+	service := NewService(store, time.UTC, time.Now)
 
 	_, err := service.CreateActive(context.Background(), CreateInput{
 		MainChatID:      -1001,
@@ -137,7 +156,7 @@ func TestCreateActiveRejectsEndDateBeforeStartDate(t *testing.T) {
 	start := time.Date(2026, 6, 10, 0, 0, 0, 0, location)
 	end := time.Date(2026, 6, 9, 0, 0, 0, 0, location)
 	store := &recordingStore{nextNum: 1}
-	service := NewService(store, location)
+	service := NewService(store, location, time.Now)
 
 	_, err := service.CreateActive(context.Background(), CreateInput{
 		MainChatID:      -1001,

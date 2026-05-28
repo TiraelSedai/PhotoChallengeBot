@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/TiraelSedai/PhotoChallengeBot/internal/require"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -43,9 +44,7 @@ func New(token string, handler tgbot.HandlerFunc, options ...tgbot.Option) (*Run
 }
 
 func NewWithClient(client Client) *Runner {
-	if client == nil {
-		panic("telegram client is nil")
-	}
+	require.NotNil("telegram client", client)
 	return &Runner{client: client}
 }
 

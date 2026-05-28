@@ -26,6 +26,7 @@ func TestRunReturnsContextCancellation(t *testing.T) {
 		AdminChatID:  -2002,
 		DatabasePath: filepath.Join(t.TempDir(), "bot.sqlite"),
 		TemplatesDir: filepath.Join("..", "..", "templates"),
+		Location:     time.UTC,
 	}
 	app := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	app.migrationsDir = "../../migrations"
@@ -37,6 +38,28 @@ func TestRunReturnsContextCancellation(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run() error = %v, want context.Canceled", err)
 	}
+}
+
+func TestNewPanicsOnNilLogger(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("New() did not panic")
+		}
+	}()
+	New(config.Config{}, nil)
+}
+
+func TestNewPanicsOnNilLocation(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("New() did not panic")
+		}
+	}()
+	New(config.Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
 func TestRunStartsTelegramRunner(t *testing.T) {
@@ -54,6 +77,7 @@ func TestRunStartsTelegramRunner(t *testing.T) {
 		AdminChatID:      -2002,
 		DatabasePath:     filepath.Join(t.TempDir(), "bot.sqlite"),
 		TemplatesDir:     filepath.Join("..", "..", "templates"),
+		Location:         time.UTC,
 	}
 	app := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	app.migrationsDir = "../../migrations"
@@ -89,6 +113,7 @@ func TestRunTreatsUnexpectedRunnerExitAsError(t *testing.T) {
 		AdminChatID:      -2002,
 		DatabasePath:     filepath.Join(t.TempDir(), "bot.sqlite"),
 		TemplatesDir:     filepath.Join("..", "..", "templates"),
+		Location:         time.UTC,
 	}
 	app := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	app.migrationsDir = "../../migrations"
@@ -111,6 +136,7 @@ func TestRunWrapsUnexpectedRunnerContextCancellation(t *testing.T) {
 		AdminChatID:      -2002,
 		DatabasePath:     filepath.Join(t.TempDir(), "bot.sqlite"),
 		TemplatesDir:     filepath.Join("..", "..", "templates"),
+		Location:         time.UTC,
 	}
 	app := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	app.migrationsDir = "../../migrations"
@@ -144,6 +170,7 @@ func TestRunStartsScheduler(t *testing.T) {
 		AdminChatID:      -2002,
 		DatabasePath:     databasePath,
 		TemplatesDir:     filepath.Join("..", "..", "templates"),
+		Location:         time.UTC,
 	}
 	app := New(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	app.migrationsDir = "../../migrations"

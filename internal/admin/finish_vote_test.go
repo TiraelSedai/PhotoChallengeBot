@@ -48,6 +48,23 @@ func TestFinishVoteHandlerFinishesVotingAndPublishesResults(t *testing.T) {
 	}
 }
 
+func TestNewFinishVoteHandlerPanicsOnNilTopics(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("NewFinishVoteHandler() did not panic")
+		}
+	}()
+	NewFinishVoteHandler(FinishVoteConfig{
+		AdminChatID: -2002,
+		MainChatID:  -1001,
+		Challenges:  &finishVoteChallenges{},
+		Publisher:   &finishVotePublisher{},
+		Results:     &finishVoteResults{},
+		BotUsername: func() string { return "PhotoChallengeBot" },
+		Now:         func() time.Time { return time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC) },
+	})
+}
+
 func TestFinishVoteHandlerReportsAbsentVoting(t *testing.T) {
 	challenges := &finishVoteChallenges{open: &repository.Challenge{ID: 42, State: repository.ChallengeStateActive}}
 	publisher := &finishVotePublisher{}
@@ -58,6 +75,9 @@ func TestFinishVoteHandlerReportsAbsentVoting(t *testing.T) {
 		Challenges:  challenges,
 		Publisher:   publisher,
 		Results:     results,
+		Topics:      &finishVoteTopics{},
+		BotUsername: func() string { return "PhotoChallengeBot" },
+		Now:         func() time.Time { return time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC) },
 	})
 
 	if err := handler.HandleAdminChatMessage(context.Background(), adminMessage("/finish_vote")); err != nil {
@@ -89,6 +109,9 @@ func TestFinishVoteHandlerDoesNotPublishWhenFinishDoesNotChangeRow(t *testing.T)
 		Challenges:  challenges,
 		Publisher:   publisher,
 		Results:     results,
+		Topics:      &finishVoteTopics{},
+		BotUsername: func() string { return "PhotoChallengeBot" },
+		Now:         func() time.Time { return time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC) },
 	})
 
 	if err := handler.HandleAdminChatMessage(context.Background(), adminMessage("/finish_vote")); err != nil {
@@ -118,6 +141,9 @@ func TestFinishVoteHandlerReportsPublishFailureToAdmin(t *testing.T) {
 		Challenges:  challenges,
 		Publisher:   publisher,
 		Results:     results,
+		Topics:      &finishVoteTopics{},
+		BotUsername: func() string { return "PhotoChallengeBot" },
+		Now:         func() time.Time { return time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC) },
 	})
 
 	err := handler.HandleAdminChatMessage(context.Background(), adminMessage("/finish_vote"))
@@ -150,6 +176,8 @@ func TestFinishVoteHandlerReportsTopicFailureAndStillPublishesResults(t *testing
 		Publisher:   publisher,
 		Results:     results,
 		Topics:      topics,
+		BotUsername: func() string { return "PhotoChallengeBot" },
+		Now:         func() time.Time { return time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC) },
 	})
 
 	err := handler.HandleAdminChatMessage(context.Background(), adminMessage("/finish_vote"))

@@ -40,6 +40,23 @@ func TestDeletePhotoByUsernameRemovesCurrentChallengePhoto(t *testing.T) {
 	}
 }
 
+func TestNewDeletePhotoHandlerPanicsOnNilBotUsername(t *testing.T) {
+	database := openAdminTestDB(t)
+	defer database.Close()
+	defer func() {
+		if recover() == nil {
+			t.Fatal("NewDeletePhotoHandler() did not panic")
+		}
+	}()
+	NewDeletePhotoHandler(DeletePhotoConfig{
+		AdminChatID: -2002,
+		MainChatID:  -1001,
+		Challenges:  repository.NewChallenges(database),
+		Photos:      repository.NewPhotos(database),
+		Publisher:   &recordingPublisher{},
+	})
+}
+
 func TestDeletePhotoByTelegramUserIDRemovesCurrentChallengePhoto(t *testing.T) {
 	t.Parallel()
 

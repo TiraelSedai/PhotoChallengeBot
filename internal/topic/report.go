@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/repository"
+	"github.com/TiraelSedai/PhotoChallengeBot/internal/require"
 )
 
 const (
@@ -59,10 +60,11 @@ type Reporter struct {
 }
 
 func NewReporter(cfg ReportConfig) *Reporter {
-	now := cfg.Now
-	if now == nil {
-		now = func() time.Time { return time.Now().UTC() }
-	}
+	require.NotNil("topic report challenges repository", cfg.Challenges)
+	require.NotNil("topic report suggestions repository", cfg.Suggestions)
+	require.NotNil("topic report users repository", cfg.Users)
+	require.NotNil("topic report publisher", cfg.Publisher)
+	require.NotNil("clock", cfg.Now)
 	sendFor := cfg.SendTimeout
 	if sendFor <= 0 {
 		sendFor = defaultReportSendTimeout
@@ -71,17 +73,8 @@ func NewReporter(cfg ReportConfig) *Reporter {
 	if persistFor <= 0 {
 		persistFor = defaultReportSendTimeout
 	}
-	switch {
-	case cfg.AdminChatID == 0:
+	if cfg.AdminChatID == 0 {
 		panic("admin chat id is required")
-	case cfg.Challenges == nil:
-		panic("topic report challenges repository is nil")
-	case cfg.Suggestions == nil:
-		panic("topic report suggestions repository is nil")
-	case cfg.Users == nil:
-		panic("topic report users repository is nil")
-	case cfg.Publisher == nil:
-		panic("topic report publisher is nil")
 	}
 	return &Reporter{
 		adminChatID: cfg.AdminChatID,
@@ -89,7 +82,7 @@ func NewReporter(cfg ReportConfig) *Reporter {
 		suggestions: cfg.Suggestions,
 		users:       cfg.Users,
 		publisher:   cfg.Publisher,
-		now:         now,
+		now:         cfg.Now,
 		sendFor:     sendFor,
 		persistFor:  persistFor,
 	}

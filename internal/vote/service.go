@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/repository"
+	"github.com/TiraelSedai/PhotoChallengeBot/internal/require"
 	"github.com/go-telegram/bot/models"
 )
 
@@ -81,34 +82,21 @@ type Service struct {
 }
 
 func NewService(cfg Config) *Service {
-	now := cfg.Now
-	if now == nil {
-		now = func() time.Time { return time.Now().UTC() }
-	}
-	rnd := cfg.Rand
-	if rnd == nil {
-		rnd = rand.New(rand.NewSource(time.Now().UnixNano()))
-	}
-	switch {
-	case cfg.Challenges == nil:
-		panic("challenge repository is nil")
-	case cfg.Users == nil:
-		panic("user repository is nil")
-	case cfg.Photos == nil:
-		panic("photo repository is nil")
-	case cfg.Votes == nil:
-		panic("vote repository is nil")
-	case cfg.Publisher == nil:
-		panic("vote publisher is nil")
-	}
+	require.NotNil("challenge repository", cfg.Challenges)
+	require.NotNil("user repository", cfg.Users)
+	require.NotNil("photo repository", cfg.Photos)
+	require.NotNil("vote repository", cfg.Votes)
+	require.NotNil("vote publisher", cfg.Publisher)
+	require.NotNil("clock", cfg.Now)
+	require.NotNil("rand", cfg.Rand)
 	return &Service{
 		challenges: cfg.Challenges,
 		users:      cfg.Users,
 		photos:     cfg.Photos,
 		votes:      cfg.Votes,
 		publisher:  cfg.Publisher,
-		now:        now,
-		rand:       rnd,
+		now:        cfg.Now,
+		rand:       cfg.Rand,
 	}
 }
 

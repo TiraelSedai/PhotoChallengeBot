@@ -37,6 +37,21 @@ func TestServiceStoresThemeSuggestionDuringVoting(t *testing.T) {
 	}
 }
 
+func TestNewServicePanicsOnNilClock(t *testing.T) {
+	store := newTopicTestStore(votingChallenge(time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC)))
+	defer func() {
+		if recover() == nil {
+			t.Fatal("NewService() did not panic")
+		}
+	}()
+	NewService(Config{
+		MainChatID:  1001,
+		Challenges:  store,
+		Users:       store,
+		Suggestions: store,
+	})
+}
+
 func TestServiceStoresThemeSuggestionFromCaption(t *testing.T) {
 	now := time.Date(2026, 5, 20, 12, 0, 0, 0, time.UTC)
 	store := newTopicTestStore(votingChallenge(now))
