@@ -56,12 +56,17 @@ type ResultsPublisher interface {
 	PublishDue(context.Context, int64, int) error
 }
 
+type TopicReporter interface {
+	PublishDue(context.Context, int64, int) error
+}
+
 type Config struct {
 	MainChatID         int64
 	Challenges         Challenges
 	Photos             PhotoCounter
 	Renderer           VoteStartRenderer
 	Results            ResultsPublisher
+	Topics             TopicReporter
 	Publisher          Publisher
 	Logger             *slog.Logger
 	Now                func() time.Time
@@ -78,6 +83,7 @@ type Scheduler struct {
 	photos      PhotoCounter
 	renderer    VoteStartRenderer
 	results     ResultsPublisher
+	topics      TopicReporter
 	publisher   Publisher
 	logger      *slog.Logger
 	now         func() time.Time
@@ -127,6 +133,10 @@ func New(config Config) *Scheduler {
 	if results == nil {
 		results = noOpResultsPublisher{}
 	}
+	topics := config.Topics
+	if topics == nil {
+		topics = noOpTopicReporter{}
+	}
 	switch {
 	case config.Challenges == nil:
 		panic("scheduler challenges repository is nil")
@@ -143,6 +153,7 @@ func New(config Config) *Scheduler {
 		photos:      config.Photos,
 		renderer:    config.Renderer,
 		results:     results,
+		topics:      topics,
 		publisher:   config.Publisher,
 		logger:      logger,
 		now:         now,
@@ -195,6 +206,9 @@ func (s *Scheduler) Tick(ctx context.Context) error {
 		errs = append(errs, err)
 	}
 	if err := s.closeDueVoting(ctx, now); err != nil {
+		errs = append(errs, err)
+	}
+	if err := s.topics.PublishDue(ctx, s.mainChatID, s.batchSize); err != nil {
 		errs = append(errs, err)
 	}
 	if err := s.results.PublishDue(ctx, s.mainChatID, s.batchSize); err != nil {
@@ -491,5 +505,11 @@ func (s *Scheduler) persistenceContext(ctx context.Context) (context.Context, co
 type noOpResultsPublisher struct{}
 
 func (noOpResultsPublisher) PublishDue(context.Context, int64, int) error {
+	return nil
+}
+
+type noOpTopicReporter struct{}
+
+func (noOpTopicReporter) PublishDue(context.Context, int64, int) error {
 	return nil
 }

@@ -208,6 +208,38 @@ func TestHandlerFuncReportsRouteError(t *testing.T) {
 	}
 }
 
+func TestMainChatHandlersRunInOrder(t *testing.T) {
+	first := &recordingHandlers{}
+	second := &recordingHandlers{}
+	handlers := MainChatHandlers{first, second}
+	message := &models.Message{ID: 21}
+
+	if err := handlers.HandleMainChatMessage(context.Background(), message); err != nil {
+		t.Fatalf("HandleMainChatMessage() error = %v", err)
+	}
+	if got := first.calls; !reflect.DeepEqual(got, []string{"main:21"}) {
+		t.Fatalf("first calls = %v, want main call", got)
+	}
+	if got := second.calls; !reflect.DeepEqual(got, []string{"main:21"}) {
+		t.Fatalf("second calls = %v, want main call", got)
+	}
+}
+
+func TestMainChatHandlersStopOnError(t *testing.T) {
+	wantErr := errors.New("main failed")
+	first := &recordingHandlers{err: wantErr}
+	second := &recordingHandlers{}
+	handlers := MainChatHandlers{first, second}
+
+	err := handlers.HandleMainChatMessage(context.Background(), &models.Message{ID: 22})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("HandleMainChatMessage() error = %v, want %v", err, wantErr)
+	}
+	if len(second.calls) != 0 {
+		t.Fatalf("second calls = %v, want none after error", second.calls)
+	}
+}
+
 type recordingHandlers struct {
 	calls []string
 	err   error

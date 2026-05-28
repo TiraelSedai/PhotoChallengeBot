@@ -17,6 +17,7 @@ import (
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/scheduler"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/templates"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/tg"
+	"github.com/TiraelSedai/PhotoChallengeBot/internal/topic"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/vote"
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -95,6 +96,7 @@ func (a *App) Run(ctx context.Context) error {
 	users := repository.NewUsers(database)
 	photos := repository.NewPhotos(database)
 	votes := repository.NewVotes(database)
+	topicSuggestions := repository.NewTopicSuggestions(database)
 	resultsPublisher := results.NewPublisher(results.PublishConfig{
 		Challenges: challenges,
 		Photos:     photos,
@@ -102,6 +104,13 @@ func (a *App) Run(ctx context.Context) error {
 		Users:      users,
 		Renderer:   renderer,
 		Publisher:  telegramRunner,
+	})
+	topicReporter := topic.NewReporter(topic.ReportConfig{
+		AdminChatID: a.config.AdminChatID,
+		Challenges:  challenges,
+		Suggestions: topicSuggestions,
+		Users:       users,
+		Publisher:   telegramRunner,
 	})
 	createChallengeHandler := admin.NewCreateChallengeHandler(admin.CreateChallengeConfig{
 		AdminChatID:   a.config.AdminChatID,
@@ -129,6 +138,7 @@ func (a *App) Run(ctx context.Context) error {
 		Challenges:  challenges,
 		Publisher:   telegramRunner,
 		Results:     resultsPublisher,
+		Topics:      topicReporter,
 		BotUsername: telegramRunner.Username,
 	})
 	adminHandler := admin.NewRouter(admin.RouterConfig{
@@ -143,6 +153,12 @@ func (a *App) Run(ctx context.Context) error {
 		Photos:     photos,
 		Publisher:  telegramRunner,
 	})
+	topicHandler := topic.NewService(topic.Config{
+		MainChatID:  a.config.MainChatID,
+		Challenges:  challenges,
+		Users:       users,
+		Suggestions: topicSuggestions,
+	})
 	voteHandler := vote.NewService(vote.Config{
 		Challenges: challenges,
 		Users:      users,
@@ -155,7 +171,7 @@ func (a *App) Run(ctx context.Context) error {
 		MainChatID:          a.config.MainChatID,
 		AdminChatID:         a.config.AdminChatID,
 		BotUsername:         telegramRunner.Username,
-		MainChatHandler:     photoHandler,
+		MainChatHandler:     bot.MainChatHandlers{topicHandler, photoHandler},
 		AdminChatHandler:    adminHandler,
 		PrivateStartHandler: voteHandler,
 		CallbackHandler:     voteHandler,
@@ -167,6 +183,7 @@ func (a *App) Run(ctx context.Context) error {
 		Photos:      photos,
 		Renderer:    renderer,
 		Results:     resultsPublisher,
+		Topics:      topicReporter,
 		Publisher:   telegramRunner,
 		Logger:      a.logger,
 		BotUsername: telegramRunner.Username,

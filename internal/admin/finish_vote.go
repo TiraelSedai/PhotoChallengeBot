@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -11,9 +12,10 @@ import (
 )
 
 const (
-	finishVoteDoneMessage          = "Голосование завершено. Результаты ниже."
-	finishVoteAbsentMessage        = "Активного голосования нет."
-	finishVotePublishFailedMessage = "Голосование завершено, но результаты не удалось опубликовать автоматически. Планировщик попробует еще раз."
+	finishVoteDoneMessage                = "Голосование завершено. Результаты ниже."
+	finishVoteAbsentMessage              = "Активного голосования нет."
+	finishVotePublishFailedMessage       = "Голосование завершено, но результаты не удалось опубликовать автоматически. Планировщик попробует еще раз."
+	finishVoteTopicsPublishFailedMessage = "Голосование завершено, но темы не удалось отправить в админку автоматически. Планировщик попробует еще раз."
 )
 
 type FinishVoteChallenges interface {
@@ -29,12 +31,17 @@ type FinishVoteResults interface {
 	PublishOne(context.Context, int64) error
 }
 
+type FinishVoteTopics interface {
+	PublishOne(context.Context, repository.Challenge) error
+}
+
 type FinishVoteConfig struct {
 	AdminChatID int64
 	MainChatID  int64
 	Challenges  FinishVoteChallenges
 	Publisher   FinishVotePublisher
 	Results     FinishVoteResults
+	Topics      FinishVoteTopics
 	BotUsername func() string
 	Now         func() time.Time
 }
@@ -45,6 +52,7 @@ type FinishVoteHandler struct {
 	challenges  FinishVoteChallenges
 	publisher   FinishVotePublisher
 	results     FinishVoteResults
+	topics      FinishVoteTopics
 	botUsername func() string
 	now         func() time.Time
 }
@@ -57,6 +65,10 @@ func NewFinishVoteHandler(cfg FinishVoteConfig) *FinishVoteHandler {
 	botUsername := cfg.BotUsername
 	if botUsername == nil {
 		botUsername = func() string { return "" }
+	}
+	topics := cfg.Topics
+	if topics == nil {
+		topics = noOpFinishVoteTopics{}
 	}
 	switch {
 	case cfg.Challenges == nil:
@@ -72,6 +84,7 @@ func NewFinishVoteHandler(cfg FinishVoteConfig) *FinishVoteHandler {
 		challenges:  cfg.Challenges,
 		publisher:   cfg.Publisher,
 		results:     cfg.Results,
+		topics:      topics,
 		botUsername: botUsername,
 		now:         now,
 	}
@@ -97,7 +110,8 @@ func (h *FinishVoteHandler) HandleAdminChatMessage(ctx context.Context, message 
 		return err
 	}
 
-	finished, err := h.challenges.FinishVotingNow(ctx, open.ID, h.now())
+	finishedAt := h.now()
+	finished, err := h.challenges.FinishVotingNow(ctx, open.ID, finishedAt)
 	if err != nil {
 		return err
 	}
@@ -105,14 +119,23 @@ func (h *FinishVoteHandler) HandleAdminChatMessage(ctx context.Context, message 
 		_, err := h.publisher.SendText(ctx, h.adminChatID, finishVoteAbsentMessage)
 		return err
 	}
+	finishedChallenge := *open
+	finishedChallenge.State = repository.ChallengeStateFinished
+	finishedChallenge.FinishedAt = &finishedAt
+	topicErr := h.topics.PublishOne(ctx, finishedChallenge)
+	if topicErr != nil {
+		if _, sendErr := h.publisher.SendText(ctx, h.adminChatID, finishVoteTopicsPublishFailedMessage); sendErr != nil {
+			topicErr = fmt.Errorf("publish topic report: %w; notify admin: %v", topicErr, sendErr)
+		}
+	}
 	if err := h.results.PublishOne(ctx, open.ID); err != nil {
 		if _, sendErr := h.publisher.SendText(ctx, h.adminChatID, finishVotePublishFailedMessage); sendErr != nil {
-			return fmt.Errorf("publish results: %w; notify admin: %v", err, sendErr)
+			return errors.Join(topicErr, fmt.Errorf("publish results: %w; notify admin: %v", err, sendErr))
 		}
-		return err
+		return errors.Join(topicErr, err)
 	}
 	_, err = h.publisher.SendText(ctx, h.adminChatID, finishVoteDoneMessage)
-	return err
+	return errors.Join(topicErr, err)
 }
 
 func (h *FinishVoteHandler) Handles(text string) bool {
@@ -136,4 +159,10 @@ func isFinishVoteCommand(text string, botUsername string) bool {
 	return command == "/finish_vote" ||
 		command == "/finish_voting" ||
 		normalized == "завершить голосование"
+}
+
+type noOpFinishVoteTopics struct{}
+
+func (noOpFinishVoteTopics) PublishOne(context.Context, repository.Challenge) error {
+	return nil
 }

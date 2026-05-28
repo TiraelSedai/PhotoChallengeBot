@@ -2,11 +2,9 @@ package photo
 
 import (
 	"context"
-	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
+	"github.com/TiraelSedai/PhotoChallengeBot/internal/hashtag"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/repository"
 	"github.com/go-telegram/bot/models"
 )
@@ -100,7 +98,7 @@ func (s *Service) HandleMainChatMessage(ctx context.Context, message *models.Mes
 	if now.Before(challenge.AcceptStartAt) || now.After(challenge.AcceptUntilAt) {
 		return nil
 	}
-	if !hasHashtag(messageText(message), challenge.Hashtag) {
+	if !hashtag.Contains(messageText(message), challenge.Hashtag) {
 		return nil
 	}
 
@@ -148,46 +146,4 @@ func messageText(message *models.Message) string {
 		return message.Caption
 	}
 	return message.Text
-}
-
-func hasHashtag(text string, hashtag string) bool {
-	hashtag = strings.ToLower(strings.TrimSpace(hashtag))
-	if hashtag == "" || !strings.HasPrefix(hashtag, "#") {
-		return false
-	}
-
-	lower := strings.ToLower(text)
-	for offset := 0; offset < len(lower); {
-		idx := strings.Index(lower[offset:], hashtag)
-		if idx < 0 {
-			return false
-		}
-		start := offset + idx
-		end := start + len(hashtag)
-		if isTagBoundaryBefore(lower, start) && isTagBoundaryAfter(lower, end) {
-			return true
-		}
-		offset = end
-	}
-	return false
-}
-
-func isTagBoundaryBefore(value string, idx int) bool {
-	if idx == 0 {
-		return true
-	}
-	r, _ := utf8.DecodeLastRuneInString(value[:idx])
-	return !isHashtagRune(r)
-}
-
-func isTagBoundaryAfter(value string, idx int) bool {
-	if idx >= len(value) {
-		return true
-	}
-	r, _ := utf8.DecodeRuneInString(value[idx:])
-	return !isHashtagRune(r)
-}
-
-func isHashtagRune(r rune) bool {
-	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
 }

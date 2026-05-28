@@ -50,6 +50,8 @@ type Challenge struct {
 	AchievementsSendingAt *time.Time
 	AchievementsMessageID *int64
 	AchievementsSentAt    *time.Time
+	TopicReportSendingAt  *time.Time
+	TopicReportSentAt     *time.Time
 	CreatedByUserID       int64
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
@@ -65,6 +67,18 @@ type Photo struct {
 	SourceMessageID int
 	Caption         string
 	SubmittedAt     time.Time
+	UpdatedAt       time.Time
+}
+
+type TopicSuggestion struct {
+	ID              int64
+	ChallengeID     int64
+	AuthorUserID    int64
+	SourceChatID    int64
+	SourceMessageID int
+	Text            string
+	SuggestedAt     time.Time
+	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
 

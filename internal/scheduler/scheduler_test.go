@@ -1104,6 +1104,53 @@ func TestTickClosesVotingWhenDue(t *testing.T) {
 	}
 }
 
+func TestTickPublishesDueTopicReportsAfterVotingClosure(t *testing.T) {
+	ctx := context.Background()
+	database := openSchedulerTestDB(t)
+	defer database.Close()
+
+	now := testTime(96 * time.Hour)
+	challenge := createSchedulerChallenge(t, database, repository.CreateChallengeInput{
+		MainChatID:      -1001,
+		Num:             1,
+		Theme:           "Night",
+		Hashtag:         "#night",
+		AcceptStartAt:   testTime(0),
+		AcceptUntilAt:   testTime(24 * time.Hour),
+		ReminderAt:      testTime(24*time.Hour - time.Hour),
+		CreatedByUserID: 10,
+		CreatedAt:       testTime(0),
+	})
+	if _, err := database.ExecContext(ctx, `
+		UPDATE challenges
+		SET state = 'voting',
+			vote_started_at = ?,
+			vote_until_at = ?,
+			vote_message_id = 42,
+			vote_pinned_at = ?,
+			updated_at = ?
+		WHERE id = ?
+	`, timeString(testTime(48*time.Hour)), timeString(now.Add(-time.Minute)), timeString(testTime(48*time.Hour)), timeString(testTime(48*time.Hour)), challenge.ID); err != nil {
+		t.Fatalf("mark challenge voting: %v", err)
+	}
+
+	topics := &recordingTopicReporter{}
+	scheduler := newTestScheduler(database, Config{
+		MainChatID: -1001,
+		Challenges: repository.NewChallenges(database),
+		Publisher:  &recordingPublisher{},
+		Topics:     topics,
+		Now:        func() time.Time { return now },
+	})
+	if err := scheduler.Tick(ctx); err != nil {
+		t.Fatalf("Tick() error = %v", err)
+	}
+
+	if topics.mainChatID != -1001 || topics.limit != defaultBatchSize {
+		t.Fatalf("topic PublishDue args = (%d, %d), want (-1001, %d)", topics.mainChatID, topics.limit, defaultBatchSize)
+	}
+}
+
 func newTestScheduler(database *sqlx.DB, config Config) *Scheduler {
 	if config.Challenges == nil {
 		config.Challenges = repository.NewChallenges(database)
@@ -1270,6 +1317,18 @@ func (p *recordingPublisher) Pin(_ context.Context, chatID int64, messageID int)
 	}
 	p.pins = append(p.pins, recordedPin{chatID: chatID, messageID: messageID})
 	return nil
+}
+
+type recordingTopicReporter struct {
+	mainChatID int64
+	limit      int
+	err        error
+}
+
+func (r *recordingTopicReporter) PublishDue(_ context.Context, mainChatID int64, limit int) error {
+	r.mainChatID = mainChatID
+	r.limit = limit
+	return r.err
 }
 
 type voteStartRenderer struct{}

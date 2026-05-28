@@ -18,12 +18,14 @@ func TestFinishVoteHandlerFinishesVotingAndPublishesResults(t *testing.T) {
 	challenges := &finishVoteChallenges{open: &challenge, finishResult: true}
 	publisher := &finishVotePublisher{}
 	results := &finishVoteResults{}
+	topics := &finishVoteTopics{}
 	handler := NewFinishVoteHandler(FinishVoteConfig{
 		AdminChatID: -2002,
 		MainChatID:  -1001,
 		Challenges:  challenges,
 		Publisher:   publisher,
 		Results:     results,
+		Topics:      topics,
 		BotUsername: func() string { return "PhotoChallengeBot" },
 		Now:         func() time.Time { return time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC) },
 	})
@@ -37,6 +39,9 @@ func TestFinishVoteHandlerFinishesVotingAndPublishesResults(t *testing.T) {
 	}
 	if results.challengeID != 42 {
 		t.Fatalf("published challengeID = %d, want 42", results.challengeID)
+	}
+	if topics.challenge.ID != 42 || topics.challenge.State != repository.ChallengeStateFinished {
+		t.Fatalf("topic report challenge = %#v, want finished challenge 42", topics.challenge)
 	}
 	if got := publisher.sent[0]; got != finishVoteDoneMessage {
 		t.Fatalf("sent = %q, want done message", got)
@@ -127,6 +132,40 @@ func TestFinishVoteHandlerReportsPublishFailureToAdmin(t *testing.T) {
 	}
 }
 
+func TestFinishVoteHandlerReportsTopicFailureAndStillPublishesResults(t *testing.T) {
+	wantErr := errors.New("topics failed")
+	challenge := repository.Challenge{
+		ID:         42,
+		MainChatID: -1001,
+		State:      repository.ChallengeStateVoting,
+	}
+	challenges := &finishVoteChallenges{open: &challenge, finishResult: true}
+	publisher := &finishVotePublisher{}
+	results := &finishVoteResults{}
+	topics := &finishVoteTopics{err: wantErr}
+	handler := NewFinishVoteHandler(FinishVoteConfig{
+		AdminChatID: -2002,
+		MainChatID:  -1001,
+		Challenges:  challenges,
+		Publisher:   publisher,
+		Results:     results,
+		Topics:      topics,
+	})
+
+	err := handler.HandleAdminChatMessage(context.Background(), adminMessage("/finish_vote"))
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("HandleAdminChatMessage() error = %v, want %v", err, wantErr)
+	}
+	if results.challengeID != 42 {
+		t.Fatalf("published challengeID = %d, want 42", results.challengeID)
+	}
+	if len(publisher.sent) != 2 ||
+		publisher.sent[0] != finishVoteTopicsPublishFailedMessage ||
+		publisher.sent[1] != finishVoteDoneMessage {
+		t.Fatalf("sent = %#v, want topic failure then done message", publisher.sent)
+	}
+}
+
 type finishVoteChallenges struct {
 	open         *repository.Challenge
 	finishedID   int64
@@ -161,5 +200,15 @@ type finishVoteResults struct {
 
 func (p *finishVoteResults) PublishOne(_ context.Context, challengeID int64) error {
 	p.challengeID = challengeID
+	return p.err
+}
+
+type finishVoteTopics struct {
+	challenge repository.Challenge
+	err       error
+}
+
+func (p *finishVoteTopics) PublishOne(_ context.Context, challenge repository.Challenge) error {
+	p.challenge = challenge
 	return p.err
 }

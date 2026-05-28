@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -53,6 +54,8 @@ func TestOpenConfiguresSQLiteAndAppliesMigrations(t *testing.T) {
 		"achievements_sending_at",
 		"achievements_message_id",
 		"achievements_sent_at",
+		"topic_report_sending_at",
+		"topic_report_sent_at",
 	} {
 		var columnName string
 		if err := database.Get(&columnName, `
@@ -65,6 +68,54 @@ func TestOpenConfiguresSQLiteAndAppliesMigrations(t *testing.T) {
 		if columnName != column {
 			t.Fatalf("%s column = %q", column, columnName)
 		}
+	}
+}
+
+func TestTopicReportMigrationMarksExistingFinishedChallengesSent(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	tempDir := t.TempDir()
+	databasePath := filepath.Join(tempDir, "bot.sqlite")
+	migrationsDir := filepath.Join(tempDir, "migrations")
+	if err := os.Mkdir(migrationsDir, 0o755); err != nil {
+		t.Fatalf("create migrations dir: %v", err)
+	}
+	copyMigration(t, "00001_init.sql", migrationsDir)
+
+	database, err := Open(ctx, Options{
+		Path:          databasePath,
+		MigrationsDir: migrationsDir,
+	})
+	if err != nil {
+		t.Fatalf("open v1 database: %v", err)
+	}
+	insertUser(t, database, 10)
+	challengeID := insertChallenge(t, database, 1, "finished")
+	if err := database.Close(); err != nil {
+		t.Fatalf("close v1 database: %v", err)
+	}
+
+	copyMigration(t, "00002_topic_suggestions.sql", migrationsDir)
+	database, err = Open(ctx, Options{
+		Path:          databasePath,
+		MigrationsDir: migrationsDir,
+	})
+	if err != nil {
+		t.Fatalf("open upgraded database: %v", err)
+	}
+	defer database.Close()
+
+	var sentAt string
+	if err := database.Get(&sentAt, `
+		SELECT topic_report_sent_at
+		FROM challenges
+		WHERE id = ?
+	`, challengeID); err != nil {
+		t.Fatalf("query topic_report_sent_at: %v", err)
+	}
+	if sentAt == "" {
+		t.Fatal("topic_report_sent_at is empty, want historical finished challenge marked sent")
 	}
 }
 
@@ -174,6 +225,18 @@ func openTestDB(t *testing.T) *sqlx.DB {
 		t.Fatalf("Open() error = %v", err)
 	}
 	return database
+}
+
+func copyMigration(t *testing.T, name string, migrationsDir string) {
+	t.Helper()
+
+	content, err := os.ReadFile(filepath.Join("../../migrations", name))
+	if err != nil {
+		t.Fatalf("read migration %s: %v", name, err)
+	}
+	if err := os.WriteFile(filepath.Join(migrationsDir, name), content, 0o644); err != nil {
+		t.Fatalf("write migration %s: %v", name, err)
+	}
 }
 
 func insertUser(t *testing.T, database *sqlx.DB, id int64) {

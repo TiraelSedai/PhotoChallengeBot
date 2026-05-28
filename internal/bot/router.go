@@ -12,6 +12,17 @@ type MainChatHandler interface {
 	HandleMainChatMessage(context.Context, *models.Message) error
 }
 
+type MainChatHandlers []MainChatHandler
+
+func (h MainChatHandlers) HandleMainChatMessage(ctx context.Context, message *models.Message) error {
+	for _, handler := range h {
+		if err := handler.HandleMainChatMessage(ctx, message); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 type AdminChatHandler interface {
 	HandleAdminChatMessage(context.Context, *models.Message) error
 }
