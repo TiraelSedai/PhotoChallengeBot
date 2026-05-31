@@ -81,7 +81,7 @@ func TestChallengeAnnouncementSnapshot(t *testing.T) {
 		Hashtag:    "#photo_challenge[12]",
 		StartDate:  "1 июня",
 		EndDate:    "18 июня",
-		EndWeekday: "четверг",
+		EndWeekday: "четверга",
 	})
 	if err != nil {
 		t.Fatalf("Render() error = %v", err)
@@ -90,7 +90,7 @@ func TestChallengeAnnouncementSnapshot(t *testing.T) {
 	want := `*Челлендж 12 - Ночь\_город \*финал\* \[test]*
 
 Свежие фото присылайте в чат с 1 июня:
-- до вечера четверг, 18 июня;
+- до вечера четверга, 18 июня;
 - на конкурс идет одна актуальная фотография от участника;
 - если прислать новую фотографию с тегом челленджа, она заменит старую;
 - фото должно быть сделано в промежутке с 1 июня по 18 июня;

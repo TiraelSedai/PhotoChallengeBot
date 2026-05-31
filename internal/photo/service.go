@@ -28,7 +28,7 @@ type photos interface {
 }
 
 type publisher interface {
-	SendText(context.Context, int64, string) (int, error)
+	SendTextReply(context.Context, int64, string, int) (int, error)
 }
 
 type Service struct {
@@ -126,7 +126,7 @@ func (s *Service) HandleMainChatMessage(ctx context.Context, message *models.Mes
 	if replaced {
 		reply = photoReplacedMessage
 	}
-	if _, err := s.publisher.SendText(ctx, s.mainChatID, reply); err != nil {
+	if _, err := s.publisher.SendTextReply(ctx, s.mainChatID, reply, message.ID); err != nil {
 		return err
 	}
 	return nil

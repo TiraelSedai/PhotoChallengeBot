@@ -144,3 +144,29 @@ func TestRunnerSendsPlainTextMessage(t *testing.T) {
 		t.Fatalf("ParseMode = %q, want empty", sendCalls[0].SendMessageParams.ParseMode)
 	}
 }
+
+func TestRunnerSendsPlainTextReply(t *testing.T) {
+	client := &MoqClient{SendMessageFunc: func(_ context.Context, _ *tgbot.SendMessageParams) (*models.Message, error) {
+		return &models.Message{ID: 103}, nil
+	}}
+	runner := NewWithClient(client)
+
+	messageID, err := runner.SendTextReply(context.Background(), -1001, "accepted", 77)
+	if err != nil {
+		t.Fatalf("SendTextReply() error = %v", err)
+	}
+	if messageID != 103 {
+		t.Fatalf("messageID = %d, want 103", messageID)
+	}
+	sendCalls := client.SendMessageCalls()
+	if len(sendCalls) != 1 {
+		t.Fatalf("send calls = %d, want 1", len(sendCalls))
+	}
+	reply := sendCalls[0].SendMessageParams.ReplyParameters
+	if reply == nil || reply.MessageID != 77 {
+		t.Fatalf("ReplyParameters = %#v, want message 77", reply)
+	}
+	if sendCalls[0].SendMessageParams.ParseMode != "" {
+		t.Fatalf("ParseMode = %q, want empty", sendCalls[0].SendMessageParams.ParseMode)
+	}
+}

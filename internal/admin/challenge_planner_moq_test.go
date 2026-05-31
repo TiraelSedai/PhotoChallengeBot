@@ -7,6 +7,7 @@ package admin
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/challenge"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/repository"
@@ -28,6 +29,9 @@ var _ challengePlanner = &MoqChallengePlanner{}
 //			CreatePlannedFunc: func(context1 context.Context, plan challenge.Plan) (repository.Challenge, error) {
 //				panic("mock out the CreatePlanned method")
 //			},
+//			DefaultDateRangeFunc: func() (time.Time, time.Time) {
+//				panic("mock out the DefaultDateRange method")
+//			},
 //			PlanFunc: func(context1 context.Context, createInput challenge.CreateInput) (challenge.Plan, error) {
 //				panic("mock out the Plan method")
 //			},
@@ -43,6 +47,9 @@ type MoqChallengePlanner struct {
 
 	// CreatePlannedFunc mocks the CreatePlanned method.
 	CreatePlannedFunc func(context1 context.Context, plan challenge.Plan) (repository.Challenge, error)
+
+	// DefaultDateRangeFunc mocks the DefaultDateRange method.
+	DefaultDateRangeFunc func() (time.Time, time.Time)
 
 	// PlanFunc mocks the Plan method.
 	PlanFunc func(context1 context.Context, createInput challenge.CreateInput) (challenge.Plan, error)
@@ -63,6 +70,9 @@ type MoqChallengePlanner struct {
 			// Plan is the plan argument value.
 			Plan challenge.Plan
 		}
+		// DefaultDateRange holds details about calls to the DefaultDateRange method.
+		DefaultDateRange []struct {
+		}
 		// Plan holds details about calls to the Plan method.
 		Plan []struct {
 			// Context1 is the context1 argument value.
@@ -71,9 +81,10 @@ type MoqChallengePlanner struct {
 			CreateInput challenge.CreateInput
 		}
 	}
-	lockCreateActive  sync.RWMutex
-	lockCreatePlanned sync.RWMutex
-	lockPlan          sync.RWMutex
+	lockCreateActive     sync.RWMutex
+	lockCreatePlanned    sync.RWMutex
+	lockDefaultDateRange sync.RWMutex
+	lockPlan             sync.RWMutex
 }
 
 // CreateActive calls CreateActiveFunc.
@@ -153,6 +164,37 @@ func (mock *MoqChallengePlanner) CreatePlannedCalls() []struct {
 	mock.lockCreatePlanned.RLock()
 	calls = mock.calls.CreatePlanned
 	mock.lockCreatePlanned.RUnlock()
+	return calls
+}
+
+// DefaultDateRange calls DefaultDateRangeFunc.
+func (mock *MoqChallengePlanner) DefaultDateRange() (time.Time, time.Time) {
+	callInfo := struct {
+	}{}
+	mock.lockDefaultDateRange.Lock()
+	mock.calls.DefaultDateRange = append(mock.calls.DefaultDateRange, callInfo)
+	mock.lockDefaultDateRange.Unlock()
+	if mock.DefaultDateRangeFunc == nil {
+		var (
+			time1  time.Time
+			time11 time.Time
+		)
+		return time1, time11
+	}
+	return mock.DefaultDateRangeFunc()
+}
+
+// DefaultDateRangeCalls gets all the calls that were made to DefaultDateRange.
+// Check the length with:
+//
+//	len(mockedchallengePlanner.DefaultDateRangeCalls())
+func (mock *MoqChallengePlanner) DefaultDateRangeCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockDefaultDateRange.RLock()
+	calls = mock.calls.DefaultDateRange
+	mock.lockDefaultDateRange.RUnlock()
 	return calls
 }
 

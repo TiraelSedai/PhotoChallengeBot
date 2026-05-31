@@ -19,8 +19,8 @@ var _ publisher = &MoqPublisher{}
 //
 //		// make and configure a mocked publisher
 //		mockedpublisher := &MoqPublisher{
-//			SendTextFunc: func(context1 context.Context, n int64, s string) (int, error) {
-//				panic("mock out the SendText method")
+//			SendTextReplyFunc: func(context1 context.Context, n int64, s string, n1 int) (int, error) {
+//				panic("mock out the SendTextReply method")
 //			},
 //		}
 //
@@ -29,64 +29,70 @@ var _ publisher = &MoqPublisher{}
 //
 //	}
 type MoqPublisher struct {
-	// SendTextFunc mocks the SendText method.
-	SendTextFunc func(context1 context.Context, n int64, s string) (int, error)
+	// SendTextReplyFunc mocks the SendTextReply method.
+	SendTextReplyFunc func(context1 context.Context, n int64, s string, n1 int) (int, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
-		// SendText holds details about calls to the SendText method.
-		SendText []struct {
+		// SendTextReply holds details about calls to the SendTextReply method.
+		SendTextReply []struct {
 			// Context1 is the context1 argument value.
 			Context1 context.Context
 			// N is the n argument value.
 			N int64
 			// S is the s argument value.
 			S string
+			// N1 is the n1 argument value.
+			N1 int
 		}
 	}
-	lockSendText sync.RWMutex
+	lockSendTextReply sync.RWMutex
 }
 
-// SendText calls SendTextFunc.
-func (mock *MoqPublisher) SendText(context1 context.Context, n int64, s string) (int, error) {
+// SendTextReply calls SendTextReplyFunc.
+func (mock *MoqPublisher) SendTextReply(context1 context.Context, n int64, s string, n1 int) (int, error) {
 	callInfo := struct {
 		Context1 context.Context
 		N        int64
 		S        string
+		N1       int
 	}{
 		Context1: context1,
 		N:        n,
 		S:        s,
+		N1:       n1,
 	}
-	mock.lockSendText.Lock()
-	mock.calls.SendText = append(mock.calls.SendText, callInfo)
-	mock.lockSendText.Unlock()
-	if mock.SendTextFunc == nil {
+	mock.lockSendTextReply.Lock()
+	mock.calls.SendTextReply = append(mock.calls.SendTextReply, callInfo)
+	mock.lockSendTextReply.Unlock()
+	if mock.SendTextReplyFunc == nil {
 		var (
-			n1  int
+			n2  int
 			err error
 		)
-		return n1, err
+		return n2, err
 	}
-	return mock.SendTextFunc(context1, n, s)
+	return mock.SendTextReplyFunc(context1, n, s, n1)
 }
 
-// SendTextCalls gets all the calls that were made to SendText.
+// SendTextReplyCalls gets all the calls that were made to SendTextReply.
 // Check the length with:
 //
-//	len(mockedpublisher.SendTextCalls())
-func (mock *MoqPublisher) SendTextCalls() []struct {
+//	len(mockedpublisher.SendTextReplyCalls())
+func (mock *MoqPublisher) SendTextReplyCalls() []struct {
 	Context1 context.Context
 	N        int64
 	S        string
+	N1       int
 } {
 	var calls []struct {
 		Context1 context.Context
 		N        int64
 		S        string
+		N1       int
 	}
-	mock.lockSendText.RLock()
-	calls = mock.calls.SendText
-	mock.lockSendText.RUnlock()
+	mock.lockSendTextReply.RLock()
+	calls = mock.calls.SendTextReply
+	mock.lockSendTextReply.RUnlock()
 	return calls
 }

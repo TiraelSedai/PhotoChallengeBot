@@ -31,6 +31,7 @@ type telegramRunner interface {
 	Run(context.Context) error
 	SendMarkdown(context.Context, int64, string) (int, error)
 	SendText(context.Context, int64, string) (int, error)
+	SendTextReply(context.Context, int64, string, int) (int, error)
 	SendPhoto(context.Context, int64, string, string, *models.InlineKeyboardMarkup) (int, error)
 	EditPhoto(context.Context, int64, int, string, string, *models.InlineKeyboardMarkup) error
 	AnswerCallback(context.Context, string, string) error

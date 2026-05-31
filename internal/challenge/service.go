@@ -102,6 +102,11 @@ func (s *Service) CreatePlanned(ctx context.Context, plan Plan) (repository.Chal
 	})
 }
 
+func (s *Service) DefaultDateRange() (time.Time, time.Time) {
+	startDate := s.localDate(nil)
+	return startDate, startDate.AddDate(0, 0, defaultDurationDays)
+}
+
 func (s *Service) Plan(ctx context.Context, input CreateInput) (Plan, error) {
 	if input.MainChatID == 0 {
 		return Plan{}, fmt.Errorf("main chat id is required")
@@ -124,8 +129,11 @@ func (s *Service) Plan(ctx context.Context, input CreateInput) (Plan, error) {
 		return Plan{}, fmt.Errorf("open challenge already exists")
 	}
 
-	startDate := s.localDate(input.StartDate)
-	endDate := startDate.AddDate(0, 0, defaultDurationDays)
+	startDate, endDate := s.DefaultDateRange()
+	if input.StartDate != nil {
+		startDate = dateOnly((*input.StartDate).In(s.location), s.location)
+		endDate = startDate.AddDate(0, 0, defaultDurationDays)
+	}
 	if input.EndDate != nil {
 		endDate = dateOnly((*input.EndDate).In(s.location), s.location)
 	}

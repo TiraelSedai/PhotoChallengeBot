@@ -37,6 +37,7 @@ type challengePlanner interface {
 	Plan(context.Context, challenge.CreateInput) (challenge.Plan, error)
 	CreateActive(context.Context, challenge.CreateInput) (repository.Challenge, error)
 	CreatePlanned(context.Context, challenge.Plan) (repository.Challenge, error)
+	DefaultDateRange() (time.Time, time.Time)
 }
 
 type challengeAnnouncements interface {
@@ -185,11 +186,22 @@ func (h *CreateChallengeHandler) acceptHashtag(ctx context.Context, adminUserID 
 		return err
 	}
 
+	defaultStart, defaultEnd := h.challenges.DefaultDateRange()
 	payload.Hashtag = text
+	payload.StartDate = dateString(defaultStart)
+	payload.EndDate = dateString(defaultEnd)
 	if err := h.savePayload(ctx, adminUserID, stepDates, payload); err != nil {
 		return err
 	}
-	_, err = h.publisher.SendMarkdown(ctx, h.adminChatID, "Пришли даты: `ОК` для дефолта или `YYYY-MM-DD YYYY-MM-DD`.")
+	_, err = h.publisher.SendMarkdown(
+		ctx,
+		h.adminChatID,
+		fmt.Sprintf(
+			"Пришли даты: `ОК` - с %s по %s, или `YYYY-MM-DD YYYY-MM-DD`.",
+			dateString(defaultStart),
+			dateString(defaultEnd),
+		),
+	)
 	return err
 }
 
@@ -203,6 +215,16 @@ func (h *CreateChallengeHandler) acceptDates(ctx context.Context, adminUserID in
 	if err != nil {
 		_, sendErr := h.publisher.SendMarkdown(ctx, h.adminChatID, "Не понял даты. Пришли `ОК` или `YYYY-MM-DD YYYY-MM-DD`.")
 		return sendErr
+	}
+	if isOK(text) {
+		startDate, err = parseOptionalDate(payload.StartDate, h.location)
+		if err != nil {
+			return err
+		}
+		endDate, err = parseOptionalDate(payload.EndDate, h.location)
+		if err != nil {
+			return err
+		}
 	}
 
 	input := challenge.CreateInput{
@@ -235,7 +257,7 @@ func (h *CreateChallengeHandler) acceptDates(ctx context.Context, adminUserID in
 		return err
 	}
 
-	_, err = h.publisher.SendMarkdown(ctx, h.adminChatID, draft+"\n\nДля публикации пришли `ОК`; любое другое сообщение уйдет в основной чат как текст анонса.")
+	_, err = h.publisher.SendMarkdown(ctx, h.adminChatID, draft+"\n\nДля публикации пришли `ОК`; любое другое сообщение заменит текст анонса.")
 	return err
 }
 
@@ -266,14 +288,21 @@ func (h *CreateChallengeHandler) approve(ctx context.Context, adminUserID int64,
 		return err
 	}
 
-	if !payload.AnnouncementSelected {
-		announcementText := strings.TrimSpace(text)
+	announcementText := strings.TrimSpace(text)
+	if !isOK(announcementText) {
 		payload.AnnouncementText = announcementText
 		payload.AnnouncementMarkdown = false
-		if isOK(announcementText) {
-			payload.AnnouncementText = payload.DraftText
-			payload.AnnouncementMarkdown = true
+		payload.AnnouncementSelected = true
+		if err := h.savePayload(ctx, adminUserID, stepApprove, payload); err != nil {
+			return err
 		}
+		_, err = h.publisher.SendText(ctx, h.adminChatID, announcementText+"\n\nДля публикации пришли `ОК`; любое другое сообщение заменит текст анонса.")
+		return err
+	}
+
+	if !payload.AnnouncementSelected {
+		payload.AnnouncementText = payload.DraftText
+		payload.AnnouncementMarkdown = true
 		payload.AnnouncementSelected = true
 		if err := h.savePayload(ctx, adminUserID, stepApprove, payload); err != nil {
 			return err
@@ -555,13 +584,13 @@ func russianDate(value time.Time) string {
 
 func russianWeekday(value time.Time) string {
 	weekdays := map[time.Weekday]string{
-		time.Monday:    "понедельник",
-		time.Tuesday:   "вторник",
-		time.Wednesday: "среда",
-		time.Thursday:  "четверг",
-		time.Friday:    "пятница",
-		time.Saturday:  "суббота",
-		time.Sunday:    "воскресенье",
+		time.Monday:    "понедельника",
+		time.Tuesday:   "вторника",
+		time.Wednesday: "среды",
+		time.Thursday:  "четверга",
+		time.Friday:    "пятницы",
+		time.Saturday:  "субботы",
+		time.Sunday:    "воскресенья",
 	}
 	return weekdays[value.Weekday()]
 }

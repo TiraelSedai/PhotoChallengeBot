@@ -31,7 +31,7 @@ func TestServiceAcceptsFirstPhotoWithChallengeHashtag(t *testing.T) {
 		t.Fatalf("SubmittedAt = %s, want %s", got.SubmittedAt, now)
 	}
 
-	wantMessages := []string{firstPhotoAcceptedMessage}
+	wantMessages := []sentReply{{text: firstPhotoAcceptedMessage, replyToMessageID: 100}}
 	if !reflect.DeepEqual(deps.messages, wantMessages) {
 		t.Fatalf("messages = %v, want %v", deps.messages, wantMessages)
 	}
@@ -77,7 +77,10 @@ func TestServiceReplacesExistingPhoto(t *testing.T) {
 		t.Fatalf("stored replacement = %#v", got)
 	}
 
-	wantMessages := []string{firstPhotoAcceptedMessage, photoReplacedMessage}
+	wantMessages := []sentReply{
+		{text: firstPhotoAcceptedMessage, replyToMessageID: 100},
+		{text: photoReplacedMessage, replyToMessageID: 101},
+	}
 	if !reflect.DeepEqual(deps.messages, wantMessages) {
 		t.Fatalf("messages = %v, want %v", deps.messages, wantMessages)
 	}
@@ -167,7 +170,7 @@ type photoServiceDeps struct {
 	challenge  *repository.Challenge
 	usersByID  map[int64]repository.User
 	photos     []repository.Photo
-	messages   []string
+	messages   []sentReply
 	challenges *MoqChallenges
 	users      *MoqUsers
 	photoStore *MoqPhotos
@@ -212,9 +215,17 @@ func newPhotoServiceDeps(challenge repository.Challenge) *photoServiceDeps {
 		deps.photos = append(deps.photos, photo)
 		return photo, false, nil
 	}}
-	deps.publisher = &MoqPublisher{SendTextFunc: func(_ context.Context, _ int64, text string) (int, error) {
-		deps.messages = append(deps.messages, text)
+	deps.publisher = &MoqPublisher{SendTextReplyFunc: func(_ context.Context, _ int64, text string, replyToMessageID int) (int, error) {
+		deps.messages = append(deps.messages, sentReply{
+			text:             text,
+			replyToMessageID: replyToMessageID,
+		})
 		return len(deps.messages), nil
 	}}
 	return deps
+}
+
+type sentReply struct {
+	text             string
+	replyToMessageID int
 }

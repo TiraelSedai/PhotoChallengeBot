@@ -98,6 +98,35 @@ func TestPlanDoesNotCreateChallenge(t *testing.T) {
 	}
 }
 
+func TestDefaultDateRangeUsesSameDatesAsDefaultPlan(t *testing.T) {
+	t.Parallel()
+
+	location := mustLoadLocation(t, "Europe/Moscow")
+	store := newStoreMock(nil, 3, nil)
+	service := NewService(store, location, func() time.Time {
+		return time.Date(2026, 5, 1, 11, 30, 0, 0, location)
+	})
+
+	startDate, endDate := service.DefaultDateRange()
+	plan, err := service.Plan(context.Background(), CreateInput{
+		MainChatID:      -1001,
+		Theme:           "Ночь",
+		Hashtag:         "#night",
+		CreatedByUserID: 10,
+	})
+	if err != nil {
+		t.Fatalf("Plan() error = %v", err)
+	}
+
+	if !startDate.Equal(plan.AcceptStartAt) {
+		t.Fatalf("startDate = %s, want %s", startDate, plan.AcceptStartAt)
+	}
+	wantEndDate := time.Date(plan.AcceptUntilAt.Year(), plan.AcceptUntilAt.Month(), plan.AcceptUntilAt.Day(), 0, 0, 0, 0, location)
+	if !endDate.Equal(wantEndDate) {
+		t.Fatalf("endDate = %s, want %s", endDate, wantEndDate)
+	}
+}
+
 func TestCreateActiveUsesCustomDates(t *testing.T) {
 	t.Parallel()
 

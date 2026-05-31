@@ -17,11 +17,24 @@ func (r *Runner) SendText(ctx context.Context, chatID int64, text string) (int, 
 	return r.send(ctx, chatID, text, "")
 }
 
+func (r *Runner) SendTextReply(ctx context.Context, chatID int64, text string, replyToMessageID int) (int, error) {
+	return r.sendWithReply(ctx, chatID, text, "", replyToMessageID)
+}
+
 func (r *Runner) send(ctx context.Context, chatID int64, text string, parseMode models.ParseMode) (int, error) {
+	return r.sendWithReply(ctx, chatID, text, parseMode, 0)
+}
+
+func (r *Runner) sendWithReply(ctx context.Context, chatID int64, text string, parseMode models.ParseMode, replyToMessageID int) (int, error) {
+	var replyParameters *models.ReplyParameters
+	if replyToMessageID != 0 {
+		replyParameters = &models.ReplyParameters{MessageID: replyToMessageID}
+	}
 	message, err := r.client.SendMessage(ctx, &tgbot.SendMessageParams{
-		ChatID:    chatID,
-		Text:      text,
-		ParseMode: parseMode,
+		ChatID:          chatID,
+		Text:            text,
+		ParseMode:       parseMode,
+		ReplyParameters: replyParameters,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("send telegram message: %w", err)

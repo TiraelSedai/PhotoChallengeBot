@@ -45,6 +45,9 @@ var _ telegramRunner = &MoqTelegramRunner{}
 //			SendTextFunc: func(context1 context.Context, n int64, s string) (int, error) {
 //				panic("mock out the SendText method")
 //			},
+//			SendTextReplyFunc: func(context1 context.Context, n int64, s string, n1 int) (int, error) {
+//				panic("mock out the SendTextReply method")
+//			},
 //			UsernameFunc: func() string {
 //				panic("mock out the Username method")
 //			},
@@ -78,6 +81,9 @@ type MoqTelegramRunner struct {
 
 	// SendTextFunc mocks the SendText method.
 	SendTextFunc func(context1 context.Context, n int64, s string) (int, error)
+
+	// SendTextReplyFunc mocks the SendTextReply method.
+	SendTextReplyFunc func(context1 context.Context, n int64, s string, n1 int) (int, error)
 
 	// UsernameFunc mocks the Username method.
 	UsernameFunc func() string
@@ -158,6 +164,17 @@ type MoqTelegramRunner struct {
 			// S is the s argument value.
 			S string
 		}
+		// SendTextReply holds details about calls to the SendTextReply method.
+		SendTextReply []struct {
+			// Context1 is the context1 argument value.
+			Context1 context.Context
+			// N is the n argument value.
+			N int64
+			// S is the s argument value.
+			S string
+			// N1 is the n1 argument value.
+			N1 int
+		}
 		// Username holds details about calls to the Username method.
 		Username []struct {
 		}
@@ -170,6 +187,7 @@ type MoqTelegramRunner struct {
 	lockSendMarkdown   sync.RWMutex
 	lockSendPhoto      sync.RWMutex
 	lockSendText       sync.RWMutex
+	lockSendTextReply  sync.RWMutex
 	lockUsername       sync.RWMutex
 }
 
@@ -521,6 +539,54 @@ func (mock *MoqTelegramRunner) SendTextCalls() []struct {
 	mock.lockSendText.RLock()
 	calls = mock.calls.SendText
 	mock.lockSendText.RUnlock()
+	return calls
+}
+
+// SendTextReply calls SendTextReplyFunc.
+func (mock *MoqTelegramRunner) SendTextReply(context1 context.Context, n int64, s string, n1 int) (int, error) {
+	callInfo := struct {
+		Context1 context.Context
+		N        int64
+		S        string
+		N1       int
+	}{
+		Context1: context1,
+		N:        n,
+		S:        s,
+		N1:       n1,
+	}
+	mock.lockSendTextReply.Lock()
+	mock.calls.SendTextReply = append(mock.calls.SendTextReply, callInfo)
+	mock.lockSendTextReply.Unlock()
+	if mock.SendTextReplyFunc == nil {
+		var (
+			n2  int
+			err error
+		)
+		return n2, err
+	}
+	return mock.SendTextReplyFunc(context1, n, s, n1)
+}
+
+// SendTextReplyCalls gets all the calls that were made to SendTextReply.
+// Check the length with:
+//
+//	len(mockedtelegramRunner.SendTextReplyCalls())
+func (mock *MoqTelegramRunner) SendTextReplyCalls() []struct {
+	Context1 context.Context
+	N        int64
+	S        string
+	N1       int
+} {
+	var calls []struct {
+		Context1 context.Context
+		N        int64
+		S        string
+		N1       int
+	}
+	mock.lockSendTextReply.RLock()
+	calls = mock.calls.SendTextReply
+	mock.lockSendTextReply.RUnlock()
 	return calls
 }
 

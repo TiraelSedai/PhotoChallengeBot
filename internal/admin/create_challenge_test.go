@@ -101,13 +101,28 @@ func TestCreateChallengeFlowUsesCustomApprovedText(t *testing.T) {
 	publisher := newCreateChallengePublisherDeps(200)
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
-	for _, text := range []string{"/new", "Вода", "#water", "2026-06-01 2026-06-18", "Кастомный анонс #water"} {
+	for _, text := range []string{"/new", "Вода", "#water", "2026-06-01 2026-06-18"} {
 		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
 			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
 		}
 	}
 
-	mainAnnouncement := publisher.sent[4]
+	if err := handler.HandleAdminChatMessage(context.Background(), adminMessage("Кастомный анонс #water")); err != nil {
+		t.Fatalf("HandleAdminChatMessage(custom) error = %v", err)
+	}
+	if got := publisher.countSendsTo(-1001); got != 0 {
+		t.Fatalf("main sends after custom text = %d, want 0", got)
+	}
+	lastAdmin := publisher.sent[len(publisher.sent)-1]
+	if lastAdmin.chatID != -2002 || lastAdmin.text != "Кастомный анонс #water\n\nДля публикации пришли `ОК`; любое другое сообщение заменит текст анонса." {
+		t.Fatalf("custom confirmation = %#v", lastAdmin)
+	}
+
+	if err := handler.HandleAdminChatMessage(context.Background(), adminMessage("ОК")); err != nil {
+		t.Fatalf("HandleAdminChatMessage(approve) error = %v", err)
+	}
+
+	mainAnnouncement := publisher.lastSendTo(-1001)
 	if mainAnnouncement.text != "Кастомный анонс #water" {
 		t.Fatalf("main announcement = %q, want custom text", mainAnnouncement.text)
 	}
@@ -122,6 +137,67 @@ func TestCreateChallengeFlowUsesCustomApprovedText(t *testing.T) {
 	wantUntil := time.Date(2026, 6, 18, 18, 0, 0, 0, mustAdminLocation(t))
 	if !open.AcceptUntilAt.Equal(wantUntil) {
 		t.Fatalf("AcceptUntilAt = %s, want %s", open.AcceptUntilAt, wantUntil)
+	}
+}
+
+func TestCreateChallengeFlowShowsDefaultDatesInDatePrompt(t *testing.T) {
+	t.Parallel()
+
+	database := openAdminTestDB(t)
+	defer database.Close()
+	publisher := newCreateChallengePublisherDeps(250)
+	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
+
+	for _, text := range []string{"/challenge", "Еда", "#food"} {
+		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
+			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
+		}
+	}
+
+	last := publisher.sent[len(publisher.sent)-1]
+	if !strings.Contains(last.text, "`ОК` - с 2026-05-01 по 2026-05-18") {
+		t.Fatalf("date prompt = %q, want explicit default date range", last.text)
+	}
+}
+
+func TestCreateChallengeFlowUsesPromptedDefaultDatesAfterClockMoves(t *testing.T) {
+	t.Parallel()
+
+	database := openAdminTestDB(t)
+	defer database.Close()
+	location := mustAdminLocation(t)
+	publisher := newCreateChallengePublisherDeps(275)
+	now := time.Date(2026, 5, 1, 23, 59, 0, 0, location)
+	handler := newAdminTestHandlerWithClock(t, database, location, publisher, func() time.Time {
+		return now
+	})
+
+	for _, text := range []string{"/challenge", "Еда", "#food"} {
+		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
+			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
+		}
+	}
+	now = time.Date(2026, 5, 2, 0, 1, 0, 0, location)
+	for _, text := range []string{"ОК", "ОК"} {
+		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
+			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
+		}
+	}
+
+	open, err := repository.NewChallenges(database).FindOpenByMainChatID(context.Background(), -1001)
+	if err != nil {
+		t.Fatalf("FindOpenByMainChatID() error = %v", err)
+	}
+	if open == nil {
+		t.Fatal("open challenge = nil, want created challenge")
+	}
+	wantStart := time.Date(2026, 5, 1, 0, 0, 0, 0, location)
+	wantUntil := time.Date(2026, 5, 18, 18, 0, 0, 0, location)
+	if !open.AcceptStartAt.Equal(wantStart) {
+		t.Fatalf("AcceptStartAt = %s, want prompted %s", open.AcceptStartAt, wantStart)
+	}
+	if !open.AcceptUntilAt.Equal(wantUntil) {
+		t.Fatalf("AcceptUntilAt = %s, want prompted %s", open.AcceptUntilAt, wantUntil)
 	}
 }
 
@@ -296,7 +372,10 @@ func TestCreateChallengeFlowRecoversCustomTextAfterPublishFailure(t *testing.T) 
 			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
 		}
 	}
-	if err := handler.HandleAdminChatMessage(context.Background(), adminMessage("custom_text_with_unmatched_underscore_")); err == nil {
+	if err := handler.HandleAdminChatMessage(context.Background(), adminMessage("custom_text_with_unmatched_underscore_")); err != nil {
+		t.Fatalf("custom text error = %v", err)
+	}
+	if err := handler.HandleAdminChatMessage(context.Background(), adminMessage("ОК")); err == nil {
 		t.Fatal("custom approve error = nil, want send failure")
 	}
 
@@ -305,7 +384,7 @@ func TestCreateChallengeFlowRecoversCustomTextAfterPublishFailure(t *testing.T) 
 		t.Fatalf("retry approve error = %v", err)
 	}
 
-	mainAnnouncement := publisher.sent[4]
+	mainAnnouncement := publisher.lastSendTo(-1001)
 	if mainAnnouncement.markdown {
 		t.Fatalf("custom announcement retried as markdown: %#v", mainAnnouncement)
 	}
@@ -446,13 +525,13 @@ func TestCreateChallengeFlowUsesPlainTextForCustomAnnouncement(t *testing.T) {
 	publisher := newCreateChallengePublisherDeps(600)
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
-	for _, text := range []string{"/challenge@PhotoChallengeBot", "Тема", "#topic", "ОК", "custom_text_with_unmatched_underscore_"} {
+	for _, text := range []string{"/challenge@PhotoChallengeBot", "Тема", "#topic", "ОК", "custom_text_with_unmatched_underscore_", "ОК"} {
 		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
 			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
 		}
 	}
 
-	mainAnnouncement := publisher.sent[4]
+	mainAnnouncement := publisher.lastSendTo(-1001)
 	if mainAnnouncement.markdown {
 		t.Fatalf("custom announcement sent as markdown: %#v", mainAnnouncement)
 	}
@@ -584,10 +663,48 @@ func TestCreateChallengeFlowDoesNotPublishWithStalePlannedNumber(t *testing.T) {
 	}
 }
 
+func TestRussianWeekdayUsesGenitiveCase(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		weekday time.Weekday
+		want    string
+	}{
+		{time.Monday, "понедельника"},
+		{time.Tuesday, "вторника"},
+		{time.Wednesday, "среды"},
+		{time.Thursday, "четверга"},
+		{time.Friday, "пятницы"},
+		{time.Saturday, "субботы"},
+		{time.Sunday, "воскресенья"},
+	}
+
+	for _, tt := range tests {
+		value := time.Date(2026, 6, 1+int(tt.weekday-time.Monday), 12, 0, 0, 0, time.UTC)
+		if got := russianWeekday(value); got != tt.want {
+			t.Fatalf("russianWeekday(%s) = %q, want %q", tt.weekday, got, tt.want)
+		}
+	}
+}
+
 func newAdminTestHandler(t *testing.T, database *sqlx.DB, location *time.Location, publisher *createChallengePublisherDeps) *CreateChallengeHandler {
 	t.Helper()
 
-	return newAdminTestHandlerWithAnnouncements(t, database, location, publisher, nil)
+	return newAdminTestHandlerWithClock(t, database, location, publisher, func() time.Time {
+		return time.Date(2026, 5, 1, 11, 30, 0, 0, location)
+	})
+}
+
+func newAdminTestHandlerWithClock(
+	t *testing.T,
+	database *sqlx.DB,
+	location *time.Location,
+	publisher *createChallengePublisherDeps,
+	now func() time.Time,
+) *CreateChallengeHandler {
+	t.Helper()
+
+	return newAdminTestHandlerWithAnnouncementsAndClock(t, database, location, publisher, nil, now)
 }
 
 func newAdminTestHandlerWithAnnouncements(
@@ -596,6 +713,21 @@ func newAdminTestHandlerWithAnnouncements(
 	location *time.Location,
 	publisher *createChallengePublisherDeps,
 	announcements challengeAnnouncements,
+) *CreateChallengeHandler {
+	t.Helper()
+
+	return newAdminTestHandlerWithAnnouncementsAndClock(t, database, location, publisher, announcements, func() time.Time {
+		return time.Date(2026, 5, 1, 11, 30, 0, 0, location)
+	})
+}
+
+func newAdminTestHandlerWithAnnouncementsAndClock(
+	t *testing.T,
+	database *sqlx.DB,
+	location *time.Location,
+	publisher *createChallengePublisherDeps,
+	announcements challengeAnnouncements,
+	now func() time.Time,
 ) *CreateChallengeHandler {
 	t.Helper()
 
@@ -613,7 +745,7 @@ func newAdminTestHandlerWithAnnouncements(
 		Location:      location,
 		Sessions:      repository.NewAdminSessions(database),
 		Users:         repository.NewUsers(database),
-		Challenges:    challenge.NewService(challengeRepo, location, time.Now),
+		Challenges:    challenge.NewService(challengeRepo, location, now),
 		Announcements: announcements,
 		Renderer:      renderer,
 		Publisher:     publisher.mock,
@@ -713,6 +845,15 @@ func (p *createChallengePublisherDeps) countSendsTo(chatID int64) int {
 		}
 	}
 	return count
+}
+
+func (p *createChallengePublisherDeps) lastSendTo(chatID int64) sentMessage {
+	for i := len(p.sent) - 1; i >= 0; i-- {
+		if p.sent[i].chatID == chatID {
+			return p.sent[i]
+		}
+	}
+	return sentMessage{}
 }
 
 type sentMessage struct {
