@@ -11,3 +11,6 @@ Interfaces should usually be defined on the caller side and kept unexported. Exp
 Generated mocks must use Docker-hosted mockery v3 instead of a Go module tool dependency; run `docker run -v "$PWD":/src -w /src vektra/mockery:3` from the repository root. Mockery config lives in `.mockery.yml` and must use `template: matryer`, `filename: "{{ .InterfaceName | snakecase }}_moq_test.go"`, `pkgname: "{{.SrcPackageName}}"`, `structname: "Moq{{ .InterfaceName | firstUpper }}"`, and `template-data.stub-impl: true` for moq-like `--stub` behavior where missing `XFunc` implementations return zero values.
 
 SQLite writes are assumed to be reliable during normal bot operation. Do not add compensating complexity for the case where Telegram side effects succeed but the immediately following SQLite write fails; treat that as an end-of-world scenario such as a Docker restart at the exact wrong moment, not as a normal idempotency/retry contract.
+
+Project logs are available in Seq at `http://100.64.0.4:5341` with API key `6CdGluIpXDtmG2aDrp7X`. Filter PhotoChallengeBot events by `tag=photo`.
+Debug-level Seq logs have a 12-hour retention window; do not assume older debug events are still available during incident investigations.

@@ -103,6 +103,46 @@ func TestServiceIgnoresPhotoWithoutMatchingHashtag(t *testing.T) {
 	}
 }
 
+func TestServiceIgnoresForwardedPhotoWithMatchingHashtag(t *testing.T) {
+	now := time.Date(2026, 5, 18, 12, 0, 0, 0, time.UTC)
+	deps := newPhotoServiceDeps(activeChallenge(now, "#tag"))
+	service := newTestService(deps, now)
+
+	message := photoMessage("#tag")
+	message.ForwardOrigin = &models.MessageOrigin{Type: models.MessageOriginTypeUser}
+
+	if err := service.HandleMainChatMessage(context.Background(), message); err != nil {
+		t.Fatalf("HandleMainChatMessage() error = %v", err)
+	}
+
+	if len(deps.photos) != 0 {
+		t.Fatalf("photos length = %d, want 0", len(deps.photos))
+	}
+	if len(deps.messages) != 0 {
+		t.Fatalf("messages = %v, want none", deps.messages)
+	}
+}
+
+func TestServiceIgnoresAutomaticForwardedPhotoWithMatchingHashtag(t *testing.T) {
+	now := time.Date(2026, 5, 18, 12, 0, 0, 0, time.UTC)
+	deps := newPhotoServiceDeps(activeChallenge(now, "#tag"))
+	service := newTestService(deps, now)
+
+	message := photoMessage("#tag")
+	message.IsAutomaticForward = true
+
+	if err := service.HandleMainChatMessage(context.Background(), message); err != nil {
+		t.Fatalf("HandleMainChatMessage() error = %v", err)
+	}
+
+	if len(deps.photos) != 0 {
+		t.Fatalf("photos length = %d, want 0", len(deps.photos))
+	}
+	if len(deps.messages) != 0 {
+		t.Fatalf("messages = %v, want none", deps.messages)
+	}
+}
+
 func TestServiceIgnoresClosedOrVotingChallenge(t *testing.T) {
 	now := time.Date(2026, 5, 18, 19, 0, 0, 0, time.UTC)
 	closed := activeChallenge(now, "#tag")

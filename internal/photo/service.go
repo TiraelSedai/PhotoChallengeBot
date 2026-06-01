@@ -79,6 +79,9 @@ func (s *Service) HandleMainChatMessage(ctx context.Context, message *models.Mes
 	if len(message.Photo) == 0 {
 		return nil
 	}
+	if message.ForwardOrigin != nil || message.IsAutomaticForward {
+		return nil
+	}
 
 	challenge, err := s.challenges.FindOpenByMainChatID(ctx, s.mainChatID)
 	if err != nil {

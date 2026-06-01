@@ -51,6 +51,29 @@ func TestHandlePrivateStartCreatesAndReusesVoteOrder(t *testing.T) {
 	}
 }
 
+func TestHandlePrivateStartShowsOwnPhotoWithDisabledGreenHeart(t *testing.T) {
+	database := openVoteTestDB(t)
+	defer database.Close()
+	challengeID := createVotingChallenge(t, database, 11)
+	publisher := newVotePublisherDeps(nil)
+	service := newVoteTestService(database, publisher)
+
+	if err := service.HandlePrivateStart(context.Background(), privateStartMessage(11, "/start "+voteStartToken(t, database, challengeID)), voteStartToken(t, database, challengeID)); err != nil {
+		t.Fatalf("HandlePrivateStart() error = %v", err)
+	}
+	if len(publisher.photos) != 1 {
+		t.Fatalf("sent photos = %d, want 1", len(publisher.photos))
+	}
+
+	button := publisher.photos[0].markup.InlineKeyboard[1][0]
+	if button.Text != "💚" {
+		t.Fatalf("own photo heart = %q, want green heart", button.Text)
+	}
+	if button.CallbackData != callbackData(challengeID, 1, actionNoop) {
+		t.Fatalf("own photo callback = %q, want noop", button.CallbackData)
+	}
+}
+
 func TestNewServicePanicsOnNilRand(t *testing.T) {
 	database := openVoteTestDB(t)
 	defer database.Close()
@@ -180,6 +203,77 @@ func TestHandleCallbackNavigatesAndTogglesManualVote(t *testing.T) {
 	}
 }
 
+func TestHandleCallbackDoesNotWrapAtVoteOrderEdges(t *testing.T) {
+	database := openVoteTestDB(t)
+	defer database.Close()
+	challengeID := createVotingChallenge(t, database, 11, 12)
+	publisher := newVotePublisherDeps(nil)
+	service := newVoteTestService(database, publisher)
+	ctx := context.Background()
+
+	if err := service.HandlePrivateStart(ctx, privateStartMessage(20, "/start "+voteStartToken(t, database, challengeID)), voteStartToken(t, database, challengeID)); err != nil {
+		t.Fatalf("HandlePrivateStart() error = %v", err)
+	}
+	order, err := repository.NewVotes(database).ListVoteOrder(ctx, challengeID, 20)
+	if err != nil {
+		t.Fatalf("ListVoteOrder() error = %v", err)
+	}
+
+	if err := service.HandleCallbackQuery(ctx, voteCallback(20, "cb-prev", callbackData(challengeID, order[0].PhotoID, actionPrevious))); err != nil {
+		t.Fatalf("previous HandleCallbackQuery() error = %v", err)
+	}
+	progress, err := repository.NewVotes(database).GetProgress(ctx, challengeID, 20)
+	if err != nil {
+		t.Fatalf("GetProgress() after previous error = %v", err)
+	}
+	if progress == nil || progress.CurrentPosition != 0 {
+		t.Fatalf("progress after previous = %#v, want position 0", progress)
+	}
+	if len(publisher.edits) != 0 {
+		t.Fatalf("edits after previous = %#v, want none", publisher.edits)
+	}
+
+	if err := service.HandleCallbackQuery(ctx, voteCallback(20, "cb-next", callbackData(challengeID, order[0].PhotoID, actionNext))); err != nil {
+		t.Fatalf("next HandleCallbackQuery() error = %v", err)
+	}
+	if err := service.HandleCallbackQuery(ctx, voteCallback(20, "cb-next-edge", callbackData(challengeID, order[1].PhotoID, actionNext))); err != nil {
+		t.Fatalf("edge next HandleCallbackQuery() error = %v", err)
+	}
+	progress, err = repository.NewVotes(database).GetProgress(ctx, challengeID, 20)
+	if err != nil {
+		t.Fatalf("GetProgress() after edge next error = %v", err)
+	}
+	if progress == nil || progress.CurrentPosition != 1 {
+		t.Fatalf("progress after edge next = %#v, want position 1", progress)
+	}
+	if len(publisher.edits) != 1 {
+		t.Fatalf("edits after edge next = %#v, want only first next edit", publisher.edits)
+	}
+}
+
+func TestVoteKeyboardHidesEdgeArrows(t *testing.T) {
+	challengeID := int64(42)
+	first := keyboard(View{
+		ChallengeID: challengeID,
+		Photo:       repository.Photo{ID: 1},
+		Position:    0,
+		Total:       2,
+	})
+	if got := first.InlineKeyboard[0]; len(got) != 2 || got[0].Text != "1/2" || got[1].Text != "➡️" {
+		t.Fatalf("first row = %#v, want counter and right arrow", got)
+	}
+
+	last := keyboard(View{
+		ChallengeID: challengeID,
+		Photo:       repository.Photo{ID: 2},
+		Position:    1,
+		Total:       2,
+	})
+	if got := last.InlineKeyboard[0]; len(got) != 2 || got[0].Text != "⬅️" || got[1].Text != "2/2" {
+		t.Fatalf("last row = %#v, want left arrow and counter", got)
+	}
+}
+
 func TestHandleCallbackReturnsUnexpectedBackendErrorAfterAnswering(t *testing.T) {
 	database := openVoteTestDB(t)
 	challengeID := createVotingChallenge(t, database, 11)
@@ -268,11 +362,11 @@ func TestHandleCallbackNavigatesLiveOrderAfterPhotoDeletion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetProgress() error = %v", err)
 	}
-	if progress == nil || progress.CurrentPosition != 0 {
-		t.Fatalf("progress = %#v, want wrapped first live position", progress)
+	if progress == nil || progress.CurrentPosition != 1 {
+		t.Fatalf("progress = %#v, want last live position without wrap", progress)
 	}
-	if len(publisher.edits) == 0 || publisher.edits[len(publisher.edits)-1].fileID != "file-1" {
-		t.Fatalf("last edit = %#v, want first live photo after wrap", publisher.edits)
+	if len(publisher.edits) != 0 {
+		t.Fatalf("edits = %#v, want no edit at last live photo", publisher.edits)
 	}
 }
 

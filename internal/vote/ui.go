@@ -22,6 +22,7 @@ type View struct {
 	Position    int
 	Total       int
 	Liked       bool
+	OwnPhoto    bool
 }
 
 func caption(view View) string {
@@ -30,19 +31,38 @@ func caption(view View) string {
 
 func keyboard(view View) *models.InlineKeyboardMarkup {
 	likeText := "♡"
+	likeAction := actionToggle
 	if view.Liked {
 		likeText = "♥"
+	}
+	if view.OwnPhoto {
+		likeText = "💚"
+		likeAction = actionNoop
+	}
+
+	nav := make([]models.InlineKeyboardButton, 0, 3)
+	if view.Position > 0 {
+		nav = append(nav, models.InlineKeyboardButton{
+			Text:         "⬅️",
+			CallbackData: callbackData(view.ChallengeID, view.Photo.ID, actionPrevious),
+		})
+	}
+	nav = append(nav, models.InlineKeyboardButton{
+		Text:         fmt.Sprintf("%d/%d", view.Position+1, view.Total),
+		CallbackData: callbackData(view.ChallengeID, view.Photo.ID, actionNoop),
+	})
+	if view.Position < view.Total-1 {
+		nav = append(nav, models.InlineKeyboardButton{
+			Text:         "➡️",
+			CallbackData: callbackData(view.ChallengeID, view.Photo.ID, actionNext),
+		})
 	}
 
 	return &models.InlineKeyboardMarkup{
 		InlineKeyboard: [][]models.InlineKeyboardButton{
+			nav,
 			{
-				{Text: "⬅️", CallbackData: callbackData(view.ChallengeID, view.Photo.ID, actionPrevious)},
-				{Text: fmt.Sprintf("%d/%d", view.Position+1, view.Total), CallbackData: callbackData(view.ChallengeID, view.Photo.ID, actionNoop)},
-				{Text: "➡️", CallbackData: callbackData(view.ChallengeID, view.Photo.ID, actionNext)},
-			},
-			{
-				{Text: likeText, CallbackData: callbackData(view.ChallengeID, view.Photo.ID, actionToggle)},
+				{Text: likeText, CallbackData: callbackData(view.ChallengeID, view.Photo.ID, likeAction)},
 			},
 		},
 	}

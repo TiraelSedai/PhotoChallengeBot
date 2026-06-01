@@ -243,11 +243,15 @@ func (s *Service) applyCallback(ctx context.Context, challengeID int64, clickedP
 	changed := false
 	switch action {
 	case actionPrevious:
-		position = wrapPosition(position-1, liveTotal)
-		changed = position != previousPosition
+		if position > 0 {
+			position--
+			changed = position != previousPosition
+		}
 	case actionNext:
-		position = wrapPosition(position+1, liveTotal)
-		changed = position != previousPosition
+		if position < liveTotal-1 {
+			position++
+			changed = position != previousPosition
+		}
 	case actionToggle:
 		current, err := s.view(ctx, challenge.ID, voterID, order, photos, position)
 		if err != nil {
@@ -366,6 +370,7 @@ func (s *Service) view(
 		Position:    position,
 		Total:       len(currentOrder),
 		Liked:       liked,
+		OwnPhoto:    photo.AuthorUserID == voterID,
 	}, nil
 }
 
@@ -405,19 +410,6 @@ func clampPosition(position, total int) int {
 	}
 	if position >= total {
 		return total - 1
-	}
-	return position
-}
-
-func wrapPosition(position, total int) int {
-	if total <= 0 {
-		return 0
-	}
-	if position < 0 {
-		return total - 1
-	}
-	if position >= total {
-		return 0
 	}
 	return position
 }
