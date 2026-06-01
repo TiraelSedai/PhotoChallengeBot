@@ -3,11 +3,13 @@ package results
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/db"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/repository"
@@ -38,11 +40,27 @@ func TestPublisherPublishesPinsResultsAndSendsAchievement(t *testing.T) {
 		t.Fatalf("PublishDue() error = %v", err)
 	}
 
-	if len(publisher.markdown) != 1 {
-		t.Fatalf("markdown messages = %d, want 1", len(publisher.markdown))
+	if len(publisher.markdown) != 0 {
+		t.Fatalf("markdown messages = %d, want none when winner photo is sent", len(publisher.markdown))
 	}
-	if !strings.Contains(publisher.markdown[0].text, "Итоги челленджа Night") {
-		t.Fatalf("results text = %q, want challenge results", publisher.markdown[0].text)
+	if len(publisher.photos) != 1 {
+		t.Fatalf("photo messages = %#v, want winner photo", publisher.photos)
+	}
+	if publisher.photos[0].fileID != "file-1" {
+		t.Fatalf("winner photo file id = %q, want file-1", publisher.photos[0].fileID)
+	}
+	if !strings.Contains(publisher.photos[0].caption, "Итоги челленджа Night") {
+		t.Fatalf("results caption = %q, want challenge results", publisher.photos[0].caption)
+	}
+	if len(publisher.photoGroups) != 1 || len(publisher.photoGroups[0].fileIDs) != 2 {
+		t.Fatalf("ranking groups = %#v, want one group with two photos", publisher.photoGroups)
+	}
+	if publisher.photoGroups[0].fileIDs[0] != "file-1" || publisher.photoGroups[0].fileIDs[1] != "file-2" {
+		t.Fatalf("ranking file ids = %#v, want winner repeated first", publisher.photoGroups[0].fileIDs)
+	}
+	if !strings.Contains(publisher.photoGroups[0].captions[0], "1. @winner, Win Ner") ||
+		!strings.Contains(publisher.photoGroups[0].captions[0], "Лайков: 2") {
+		t.Fatalf("first ranking caption = %q, want winner place and likes", publisher.photoGroups[0].captions[0])
 	}
 	if len(publisher.pins) != 1 || publisher.pins[0].messageID != 1 {
 		t.Fatalf("pins = %#v, want results message pin", publisher.pins)
@@ -60,6 +78,147 @@ func TestPublisherPublishesPinsResultsAndSendsAchievement(t *testing.T) {
 	}
 	if stored.AchievementsSentAt == nil {
 		t.Fatalf("AchievementsSentAt = nil, want marked")
+	}
+}
+
+func TestPublisherSendsRankingPhotosInBatchesOfTen(t *testing.T) {
+	database := openResultsTestDB(t)
+	defer database.Close()
+	challengeID := createFinishedChallenge(t, database)
+	votes := repository.NewVotes(database)
+	for idx := 1; idx <= 23; idx++ {
+		authorID := int64(100 + idx)
+		createResultUser(t, database, repository.User{
+			ID:        authorID,
+			Username:  fmt.Sprintf("user%02d", idx),
+			FirstName: fmt.Sprintf("User %02d", idx),
+		})
+		photoID := createResultPhoto(t, database, challengeID, authorID, fmt.Sprintf("file-%02d", idx))
+		if _, err := votes.AddSelfVote(context.Background(), challengeID, authorID, photoID, resultTestTime(time.Hour)); err != nil {
+			t.Fatalf("add self vote %d: %v", idx, err)
+		}
+		if idx == 1 {
+			if _, err := votes.AddManualVote(context.Background(), challengeID, 20, photoID, resultTestTime(2*time.Hour)); err != nil {
+				t.Fatalf("add manual vote %d: %v", idx, err)
+			}
+		}
+	}
+
+	publisher := newResultsPublisherDeps()
+	service := newResultsPublisher(t, database, publisher)
+	if err := service.PublishDue(context.Background(), -1001, 10); err != nil {
+		t.Fatalf("PublishDue() error = %v", err)
+	}
+
+	if len(publisher.photos) != 1 || publisher.photos[0].fileID != "file-01" {
+		t.Fatalf("winner photo messages = %#v, want first photo as winner", publisher.photos)
+	}
+	if strings.Contains(publisher.photos[0].caption, "Все работы") {
+		t.Fatalf("winner caption includes full ranking block: %q", publisher.photos[0].caption)
+	}
+	if len(publisher.photos[0].caption) > 1024 {
+		t.Fatalf("winner caption length = %d, want Telegram-safe caption", len(publisher.photos[0].caption))
+	}
+	if len(publisher.photoGroups) != 3 {
+		t.Fatalf("photo groups = %d, want 3", len(publisher.photoGroups))
+	}
+	for idx, want := range []int{10, 10, 3} {
+		if len(publisher.photoGroups[idx].fileIDs) != want {
+			t.Fatalf("group %d photo count = %d, want %d", idx, len(publisher.photoGroups[idx].fileIDs), want)
+		}
+	}
+	if publisher.photoGroups[0].fileIDs[0] != "file-01" {
+		t.Fatalf("first ranking photo = %q, want winner repeated as first place", publisher.photoGroups[0].fileIDs[0])
+	}
+	captionChecks := map[int]string{
+		0:  "1. @user01, User 01\nЛайков: 2",
+		9:  "10. @user10, User 10\nЛайков: 1",
+		10: "11. @user11, User 11\nЛайков: 1",
+		19: "20. @user20, User 20\nЛайков: 1",
+		20: "21. @user21, User 21\nЛайков: 1",
+		22: "23. @user23, User 23\nЛайков: 1",
+	}
+	for position, want := range captionChecks {
+		group := position / 10
+		offset := position % 10
+		if got := publisher.photoGroups[group].captions[offset]; got != want {
+			t.Fatalf("caption %d = %q, want %q", position+1, got, want)
+		}
+	}
+}
+
+func TestPublisherUsesCompactCaptionWhenWinnerSummaryExceedsTelegramLimit(t *testing.T) {
+	database := openResultsTestDB(t)
+	defer database.Close()
+	challengeID := createFinishedChallengeWithTheme(t, database, 1, "Long "+strings.Repeat("theme_", 60))
+	votes := repository.NewVotes(database)
+	for idx := 1; idx <= 11; idx++ {
+		authorID := int64(300 + idx)
+		createResultUser(t, database, repository.User{
+			ID:        authorID,
+			Username:  fmt.Sprintf("winner_%02d", idx),
+			FirstName: strings.Repeat(fmt.Sprintf("Winner%02d ", idx), 25),
+		})
+		photoID := createResultPhoto(t, database, challengeID, authorID, fmt.Sprintf("winner-file-%02d", idx))
+		if _, err := votes.AddManualVote(context.Background(), challengeID, 20, photoID, resultTestTime(time.Hour)); err != nil {
+			t.Fatalf("add manual vote %d: %v", idx, err)
+		}
+	}
+
+	publisher := newResultsPublisherDeps()
+	service := newResultsPublisher(t, database, publisher)
+	if err := service.PublishDue(context.Background(), -1001, 10); err != nil {
+		t.Fatalf("PublishDue() error = %v", err)
+	}
+
+	if len(publisher.photoGroups) < 1 {
+		t.Fatalf("photo groups = %#v, want winner summary group", publisher.photoGroups)
+	}
+	caption := publisher.photoGroups[0].captions[0]
+	if utf8.RuneCountInString(caption) > telegramPhotoCaptionLimit {
+		t.Fatalf("summary caption length = %d, want <= %d", utf8.RuneCountInString(caption), telegramPhotoCaptionLimit)
+	}
+	if !strings.Contains(caption, "Победителей: 11") {
+		t.Fatalf("summary caption = %q, want compact winner count", caption)
+	}
+	if strings.Contains(caption, "winner\\_11") {
+		t.Fatalf("summary caption = %q, want compact caption instead of full winner list", caption)
+	}
+}
+
+func TestPublisherKeepsRankingCaptionWithinTelegramLimit(t *testing.T) {
+	database := openResultsTestDB(t)
+	defer database.Close()
+	challengeID := createFinishedChallenge(t, database)
+	authorID := int64(501)
+	createResultUser(t, database, repository.User{
+		ID:        authorID,
+		Username:  strings.Repeat("long_name_", 30),
+		FirstName: strings.Repeat("very_long_display_name_", 80),
+	})
+	photoID := createResultPhoto(t, database, challengeID, authorID, "long-name-file")
+	if _, err := repository.NewVotes(database).AddManualVote(context.Background(), challengeID, 20, photoID, resultTestTime(time.Hour)); err != nil {
+		t.Fatalf("add manual vote: %v", err)
+	}
+
+	publisher := newResultsPublisherDeps()
+	service := newResultsPublisher(t, database, publisher)
+	if err := service.PublishDue(context.Background(), -1001, 10); err != nil {
+		t.Fatalf("PublishDue() error = %v", err)
+	}
+
+	if len(publisher.photos) != 2 {
+		t.Fatalf("photo messages = %#v, want winner summary and ranking photo", publisher.photos)
+	}
+	rankingCaption := publisher.photos[1].caption
+	if utf8.RuneCountInString(rankingCaption) > telegramPhotoCaptionLimit {
+		t.Fatalf("ranking caption length = %d, want <= %d", utf8.RuneCountInString(rankingCaption), telegramPhotoCaptionLimit)
+	}
+	if !strings.HasPrefix(rankingCaption, "1. @long\\_name\\_") {
+		t.Fatalf("ranking caption = %q, want escaped author prefix", rankingCaption)
+	}
+	if !strings.Contains(rankingCaption, "...\nЛайков: 1") {
+		t.Fatalf("ranking caption = %q, want shortened name and likes", rankingCaption)
 	}
 }
 
@@ -550,6 +709,10 @@ func createFinishedChallenge(t *testing.T, database *sqlx.DB) int64 {
 }
 
 func createFinishedChallengeWithNum(t *testing.T, database *sqlx.DB, num int) int64 {
+	return createFinishedChallengeWithTheme(t, database, num, "Night")
+}
+
+func createFinishedChallengeWithTheme(t *testing.T, database *sqlx.DB, num int, theme string) int64 {
 	t.Helper()
 	ctx := context.Background()
 	users := repository.NewUsers(database)
@@ -566,7 +729,7 @@ func createFinishedChallengeWithNum(t *testing.T, database *sqlx.DB, num int) in
 	challenge, err := repository.NewChallenges(database).Create(ctx, repository.CreateChallengeInput{
 		MainChatID:      -1001,
 		Num:             num,
-		Theme:           "Night",
+		Theme:           theme,
 		Hashtag:         "#night",
 		State:           repository.ChallengeStateFinished,
 		AcceptStartAt:   resultTestTime(-72 * time.Hour),
@@ -606,11 +769,22 @@ func createResultPhoto(t *testing.T, database *sqlx.DB, challengeID, authorID in
 	return photo.ID
 }
 
+func createResultUser(t *testing.T, database *sqlx.DB, user repository.User) {
+	t.Helper()
+	user.UpdatedAt = resultTestTime(-2 * time.Hour)
+	if _, err := repository.NewUsers(database).Upsert(context.Background(), user); err != nil {
+		t.Fatalf("upsert user %d: %v", user.ID, err)
+	}
+}
+
 type resultsPublisherDeps struct {
 	mock             *MoqPublisher
 	markdown         []messageCall
+	photos           []photoMessageCall
+	photoGroups      []photoGroupCall
 	texts            []messageCall
 	pins             []pinCall
+	nextMessageID    int
 	textAttempts     int
 	textErr          error
 	afterMarkdown    func()
@@ -621,6 +795,18 @@ type resultsPublisherDeps struct {
 type messageCall struct {
 	chatID int64
 	text   string
+}
+
+type photoMessageCall struct {
+	chatID  int64
+	fileID  string
+	caption string
+}
+
+type photoGroupCall struct {
+	chatID   int64
+	fileIDs  []string
+	captions []string
 }
 
 type pinCall struct {
@@ -636,7 +822,19 @@ func newResultsPublisherDeps() *resultsPublisherDeps {
 			if deps.afterMarkdown != nil {
 				deps.afterMarkdown()
 			}
-			return len(deps.markdown), nil
+			return deps.nextID(), nil
+		},
+		SendMarkdownPhotoFunc: func(_ context.Context, chatID int64, fileID string, caption string) (int, error) {
+			deps.photos = append(deps.photos, photoMessageCall{chatID: chatID, fileID: fileID, caption: caption})
+			return deps.nextID(), nil
+		},
+		SendMarkdownPhotoGroupFunc: func(_ context.Context, chatID int64, fileIDs []string, captions []string) (int, error) {
+			deps.photoGroups = append(deps.photoGroups, photoGroupCall{
+				chatID:   chatID,
+				fileIDs:  append([]string(nil), fileIDs...),
+				captions: append([]string(nil), captions...),
+			})
+			return deps.nextID(), nil
 		},
 		SendTextFunc: func(_ context.Context, chatID int64, text string) (int, error) {
 			deps.textAttempts++
@@ -647,7 +845,7 @@ func newResultsPublisherDeps() *resultsPublisherDeps {
 			if deps.afterText != nil {
 				deps.afterText()
 			}
-			return len(deps.texts), nil
+			return deps.nextID(), nil
 		},
 		PinFunc: func(ctx context.Context, chatID int64, messageID int) error {
 			if deps.pinChecksContext && ctx.Err() != nil {
@@ -658,6 +856,11 @@ func newResultsPublisherDeps() *resultsPublisherDeps {
 		},
 	}
 	return deps
+}
+
+func (d *resultsPublisherDeps) nextID() int {
+	d.nextMessageID++
+	return d.nextMessageID
 }
 
 type resultsChallengeDeps struct {

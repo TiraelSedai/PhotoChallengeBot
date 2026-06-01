@@ -39,6 +39,12 @@ var _ telegramRunner = &MoqTelegramRunner{}
 //			SendMarkdownFunc: func(context1 context.Context, n int64, s string) (int, error) {
 //				panic("mock out the SendMarkdown method")
 //			},
+//			SendMarkdownPhotoFunc: func(context1 context.Context, n int64, s string, s1 string) (int, error) {
+//				panic("mock out the SendMarkdownPhoto method")
+//			},
+//			SendMarkdownPhotoGroupFunc: func(context1 context.Context, n int64, strings []string, strings1 []string) (int, error) {
+//				panic("mock out the SendMarkdownPhotoGroup method")
+//			},
 //			SendPhotoFunc: func(context1 context.Context, n int64, s string, s1 string, inlineKeyboardMarkup *models.InlineKeyboardMarkup) (int, error) {
 //				panic("mock out the SendPhoto method")
 //			},
@@ -75,6 +81,12 @@ type MoqTelegramRunner struct {
 
 	// SendMarkdownFunc mocks the SendMarkdown method.
 	SendMarkdownFunc func(context1 context.Context, n int64, s string) (int, error)
+
+	// SendMarkdownPhotoFunc mocks the SendMarkdownPhoto method.
+	SendMarkdownPhotoFunc func(context1 context.Context, n int64, s string, s1 string) (int, error)
+
+	// SendMarkdownPhotoGroupFunc mocks the SendMarkdownPhotoGroup method.
+	SendMarkdownPhotoGroupFunc func(context1 context.Context, n int64, strings []string, strings1 []string) (int, error)
 
 	// SendPhotoFunc mocks the SendPhoto method.
 	SendPhotoFunc func(context1 context.Context, n int64, s string, s1 string, inlineKeyboardMarkup *models.InlineKeyboardMarkup) (int, error)
@@ -142,6 +154,28 @@ type MoqTelegramRunner struct {
 			// S is the s argument value.
 			S string
 		}
+		// SendMarkdownPhoto holds details about calls to the SendMarkdownPhoto method.
+		SendMarkdownPhoto []struct {
+			// Context1 is the context1 argument value.
+			Context1 context.Context
+			// N is the n argument value.
+			N int64
+			// S is the s argument value.
+			S string
+			// S1 is the s1 argument value.
+			S1 string
+		}
+		// SendMarkdownPhotoGroup holds details about calls to the SendMarkdownPhotoGroup method.
+		SendMarkdownPhotoGroup []struct {
+			// Context1 is the context1 argument value.
+			Context1 context.Context
+			// N is the n argument value.
+			N int64
+			// Strings is the strings argument value.
+			Strings []string
+			// Strings1 is the strings1 argument value.
+			Strings1 []string
+		}
 		// SendPhoto holds details about calls to the SendPhoto method.
 		SendPhoto []struct {
 			// Context1 is the context1 argument value.
@@ -179,16 +213,18 @@ type MoqTelegramRunner struct {
 		Username []struct {
 		}
 	}
-	lockAnswerCallback sync.RWMutex
-	lockEditPhoto      sync.RWMutex
-	lockEnsureIdentity sync.RWMutex
-	lockPin            sync.RWMutex
-	lockRun            sync.RWMutex
-	lockSendMarkdown   sync.RWMutex
-	lockSendPhoto      sync.RWMutex
-	lockSendText       sync.RWMutex
-	lockSendTextReply  sync.RWMutex
-	lockUsername       sync.RWMutex
+	lockAnswerCallback         sync.RWMutex
+	lockEditPhoto              sync.RWMutex
+	lockEnsureIdentity         sync.RWMutex
+	lockPin                    sync.RWMutex
+	lockRun                    sync.RWMutex
+	lockSendMarkdown           sync.RWMutex
+	lockSendMarkdownPhoto      sync.RWMutex
+	lockSendMarkdownPhotoGroup sync.RWMutex
+	lockSendPhoto              sync.RWMutex
+	lockSendText               sync.RWMutex
+	lockSendTextReply          sync.RWMutex
+	lockUsername               sync.RWMutex
 }
 
 // AnswerCallback calls AnswerCallbackFunc.
@@ -443,6 +479,102 @@ func (mock *MoqTelegramRunner) SendMarkdownCalls() []struct {
 	mock.lockSendMarkdown.RLock()
 	calls = mock.calls.SendMarkdown
 	mock.lockSendMarkdown.RUnlock()
+	return calls
+}
+
+// SendMarkdownPhoto calls SendMarkdownPhotoFunc.
+func (mock *MoqTelegramRunner) SendMarkdownPhoto(context1 context.Context, n int64, s string, s1 string) (int, error) {
+	callInfo := struct {
+		Context1 context.Context
+		N        int64
+		S        string
+		S1       string
+	}{
+		Context1: context1,
+		N:        n,
+		S:        s,
+		S1:       s1,
+	}
+	mock.lockSendMarkdownPhoto.Lock()
+	mock.calls.SendMarkdownPhoto = append(mock.calls.SendMarkdownPhoto, callInfo)
+	mock.lockSendMarkdownPhoto.Unlock()
+	if mock.SendMarkdownPhotoFunc == nil {
+		var (
+			n1  int
+			err error
+		)
+		return n1, err
+	}
+	return mock.SendMarkdownPhotoFunc(context1, n, s, s1)
+}
+
+// SendMarkdownPhotoCalls gets all the calls that were made to SendMarkdownPhoto.
+// Check the length with:
+//
+//	len(mockedtelegramRunner.SendMarkdownPhotoCalls())
+func (mock *MoqTelegramRunner) SendMarkdownPhotoCalls() []struct {
+	Context1 context.Context
+	N        int64
+	S        string
+	S1       string
+} {
+	var calls []struct {
+		Context1 context.Context
+		N        int64
+		S        string
+		S1       string
+	}
+	mock.lockSendMarkdownPhoto.RLock()
+	calls = mock.calls.SendMarkdownPhoto
+	mock.lockSendMarkdownPhoto.RUnlock()
+	return calls
+}
+
+// SendMarkdownPhotoGroup calls SendMarkdownPhotoGroupFunc.
+func (mock *MoqTelegramRunner) SendMarkdownPhotoGroup(context1 context.Context, n int64, strings []string, strings1 []string) (int, error) {
+	callInfo := struct {
+		Context1 context.Context
+		N        int64
+		Strings  []string
+		Strings1 []string
+	}{
+		Context1: context1,
+		N:        n,
+		Strings:  strings,
+		Strings1: strings1,
+	}
+	mock.lockSendMarkdownPhotoGroup.Lock()
+	mock.calls.SendMarkdownPhotoGroup = append(mock.calls.SendMarkdownPhotoGroup, callInfo)
+	mock.lockSendMarkdownPhotoGroup.Unlock()
+	if mock.SendMarkdownPhotoGroupFunc == nil {
+		var (
+			n1  int
+			err error
+		)
+		return n1, err
+	}
+	return mock.SendMarkdownPhotoGroupFunc(context1, n, strings, strings1)
+}
+
+// SendMarkdownPhotoGroupCalls gets all the calls that were made to SendMarkdownPhotoGroup.
+// Check the length with:
+//
+//	len(mockedtelegramRunner.SendMarkdownPhotoGroupCalls())
+func (mock *MoqTelegramRunner) SendMarkdownPhotoGroupCalls() []struct {
+	Context1 context.Context
+	N        int64
+	Strings  []string
+	Strings1 []string
+} {
+	var calls []struct {
+		Context1 context.Context
+		N        int64
+		Strings  []string
+		Strings1 []string
+	}
+	mock.lockSendMarkdownPhotoGroup.RLock()
+	calls = mock.calls.SendMarkdownPhotoGroup
+	mock.lockSendMarkdownPhotoGroup.RUnlock()
 	return calls
 }
 

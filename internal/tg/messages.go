@@ -52,10 +52,26 @@ func (r *Runner) SendPhoto(
 	caption string,
 	replyMarkup *models.InlineKeyboardMarkup,
 ) (int, error) {
+	return r.sendPhoto(ctx, chatID, fileID, caption, "", replyMarkup)
+}
+
+func (r *Runner) SendMarkdownPhoto(ctx context.Context, chatID int64, fileID string, caption string) (int, error) {
+	return r.sendPhoto(ctx, chatID, fileID, caption, models.ParseModeMarkdownV1, nil)
+}
+
+func (r *Runner) sendPhoto(
+	ctx context.Context,
+	chatID int64,
+	fileID string,
+	caption string,
+	parseMode models.ParseMode,
+	replyMarkup *models.InlineKeyboardMarkup,
+) (int, error) {
 	message, err := r.client.SendPhoto(ctx, &tgbot.SendPhotoParams{
 		ChatID:      chatID,
 		Photo:       &models.InputFileString{Data: fileID},
 		Caption:     caption,
+		ParseMode:   parseMode,
 		ReplyMarkup: replyMarkup,
 	})
 	if err != nil {
@@ -65,6 +81,38 @@ func (r *Runner) SendPhoto(
 		return 0, errors.New("send telegram photo: empty response")
 	}
 	return message.ID, nil
+}
+
+func (r *Runner) SendMarkdownPhotoGroup(ctx context.Context, chatID int64, fileIDs []string, captions []string) (int, error) {
+	if len(fileIDs) == 0 {
+		return 0, errors.New("send telegram photo group: no photos")
+	}
+	if len(fileIDs) != len(captions) {
+		return 0, errors.New("send telegram photo group: caption count does not match photo count")
+	}
+	if len(fileIDs) == 1 {
+		return r.SendMarkdownPhoto(ctx, chatID, fileIDs[0], captions[0])
+	}
+
+	media := make([]models.InputMedia, 0, len(fileIDs))
+	for idx, fileID := range fileIDs {
+		media = append(media, &models.InputMediaPhoto{
+			Media:     fileID,
+			Caption:   captions[idx],
+			ParseMode: models.ParseModeMarkdownV1,
+		})
+	}
+	messages, err := r.client.SendMediaGroup(ctx, &tgbot.SendMediaGroupParams{
+		ChatID: chatID,
+		Media:  media,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("send telegram photo group: %w", err)
+	}
+	if len(messages) == 0 || messages[0] == nil {
+		return 0, errors.New("send telegram photo group: empty response")
+	}
+	return messages[0].ID, nil
 }
 
 func (r *Runner) EditPhoto(

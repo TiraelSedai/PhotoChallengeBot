@@ -170,3 +170,66 @@ func TestRunnerSendsPlainTextReply(t *testing.T) {
 		t.Fatalf("ParseMode = %q, want empty", sendCalls[0].SendMessageParams.ParseMode)
 	}
 }
+
+func TestRunnerSendsMarkdownPhoto(t *testing.T) {
+	client := &MoqClient{SendPhotoFunc: func(_ context.Context, _ *tgbot.SendPhotoParams) (*models.Message, error) {
+		return &models.Message{ID: 104}, nil
+	}}
+	runner := NewWithClient(client)
+
+	messageID, err := runner.SendMarkdownPhoto(context.Background(), -1001, "file-1", "*caption*")
+	if err != nil {
+		t.Fatalf("SendMarkdownPhoto() error = %v", err)
+	}
+	if messageID != 104 {
+		t.Fatalf("messageID = %d, want 104", messageID)
+	}
+	sendCalls := client.SendPhotoCalls()
+	if len(sendCalls) != 1 {
+		t.Fatalf("send photo calls = %d, want 1", len(sendCalls))
+	}
+	params := sendCalls[0].SendPhotoParams
+	if params.ChatID != int64(-1001) || params.Caption != "*caption*" {
+		t.Fatalf("SendPhotoParams = %#v, want markdown photo caption", params)
+	}
+	if params.ParseMode != models.ParseModeMarkdownV1 {
+		t.Fatalf("ParseMode = %q, want Markdown", params.ParseMode)
+	}
+}
+
+func TestRunnerSendsMarkdownPhotoGroup(t *testing.T) {
+	client := &MoqClient{SendMediaGroupFunc: func(_ context.Context, _ *tgbot.SendMediaGroupParams) ([]*models.Message, error) {
+		return []*models.Message{{ID: 201}, {ID: 202}}, nil
+	}}
+	runner := NewWithClient(client)
+
+	messageID, err := runner.SendMarkdownPhotoGroup(context.Background(), -1001, []string{"file-1", "file-2"}, []string{"*first*", "second"})
+	if err != nil {
+		t.Fatalf("SendMarkdownPhotoGroup() error = %v", err)
+	}
+	if messageID != 201 {
+		t.Fatalf("messageID = %d, want first media message id", messageID)
+	}
+	sendCalls := client.SendMediaGroupCalls()
+	if len(sendCalls) != 1 {
+		t.Fatalf("send media group calls = %d, want 1", len(sendCalls))
+	}
+	params := sendCalls[0].SendMediaGroupParams
+	if params.ChatID != int64(-1001) || len(params.Media) != 2 {
+		t.Fatalf("SendMediaGroupParams = %#v, want two media items", params)
+	}
+	first, ok := params.Media[0].(*models.InputMediaPhoto)
+	if !ok {
+		t.Fatalf("first media = %T, want photo", params.Media[0])
+	}
+	if first.Media != "file-1" || first.Caption != "*first*" || first.ParseMode != models.ParseModeMarkdownV1 {
+		t.Fatalf("first media = %#v, want markdown photo", first)
+	}
+	second, ok := params.Media[1].(*models.InputMediaPhoto)
+	if !ok {
+		t.Fatalf("second media = %T, want photo", params.Media[1])
+	}
+	if second.Media != "file-2" || second.Caption != "second" || second.ParseMode != models.ParseModeMarkdownV1 {
+		t.Fatalf("second media = %#v, want markdown photo", second)
+	}
+}

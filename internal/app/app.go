@@ -30,6 +30,8 @@ type telegramRunner interface {
 	EnsureIdentity(context.Context) error
 	Run(context.Context) error
 	SendMarkdown(context.Context, int64, string) (int, error)
+	SendMarkdownPhoto(context.Context, int64, string, string) (int, error)
+	SendMarkdownPhotoGroup(context.Context, int64, []string, []string) (int, error)
 	SendText(context.Context, int64, string) (int, error)
 	SendTextReply(context.Context, int64, string, int) (int, error)
 	SendPhoto(context.Context, int64, string, string, *models.InlineKeyboardMarkup) (int, error)

@@ -34,6 +34,9 @@ var _ client = &MoqClient{}
 //			PinChatMessageFunc: func(context1 context.Context, pinChatMessageParams *bot.PinChatMessageParams) (bool, error) {
 //				panic("mock out the PinChatMessage method")
 //			},
+//			SendMediaGroupFunc: func(context1 context.Context, sendMediaGroupParams *bot.SendMediaGroupParams) ([]*models.Message, error) {
+//				panic("mock out the SendMediaGroup method")
+//			},
 //			SendMessageFunc: func(context1 context.Context, sendMessageParams *bot.SendMessageParams) (*models.Message, error) {
 //				panic("mock out the SendMessage method")
 //			},
@@ -61,6 +64,9 @@ type MoqClient struct {
 
 	// PinChatMessageFunc mocks the PinChatMessage method.
 	PinChatMessageFunc func(context1 context.Context, pinChatMessageParams *bot.PinChatMessageParams) (bool, error)
+
+	// SendMediaGroupFunc mocks the SendMediaGroup method.
+	SendMediaGroupFunc func(context1 context.Context, sendMediaGroupParams *bot.SendMediaGroupParams) ([]*models.Message, error)
 
 	// SendMessageFunc mocks the SendMessage method.
 	SendMessageFunc func(context1 context.Context, sendMessageParams *bot.SendMessageParams) (*models.Message, error)
@@ -99,6 +105,13 @@ type MoqClient struct {
 			// PinChatMessageParams is the pinChatMessageParams argument value.
 			PinChatMessageParams *bot.PinChatMessageParams
 		}
+		// SendMediaGroup holds details about calls to the SendMediaGroup method.
+		SendMediaGroup []struct {
+			// Context1 is the context1 argument value.
+			Context1 context.Context
+			// SendMediaGroupParams is the sendMediaGroupParams argument value.
+			SendMediaGroupParams *bot.SendMediaGroupParams
+		}
 		// SendMessage holds details about calls to the SendMessage method.
 		SendMessage []struct {
 			// Context1 is the context1 argument value.
@@ -123,6 +136,7 @@ type MoqClient struct {
 	lockEditMessageMedia    sync.RWMutex
 	lockGetMe               sync.RWMutex
 	lockPinChatMessage      sync.RWMutex
+	lockSendMediaGroup      sync.RWMutex
 	lockSendMessage         sync.RWMutex
 	lockSendPhoto           sync.RWMutex
 	lockStart               sync.RWMutex
@@ -281,6 +295,46 @@ func (mock *MoqClient) PinChatMessageCalls() []struct {
 	mock.lockPinChatMessage.RLock()
 	calls = mock.calls.PinChatMessage
 	mock.lockPinChatMessage.RUnlock()
+	return calls
+}
+
+// SendMediaGroup calls SendMediaGroupFunc.
+func (mock *MoqClient) SendMediaGroup(context1 context.Context, sendMediaGroupParams *bot.SendMediaGroupParams) ([]*models.Message, error) {
+	callInfo := struct {
+		Context1             context.Context
+		SendMediaGroupParams *bot.SendMediaGroupParams
+	}{
+		Context1:             context1,
+		SendMediaGroupParams: sendMediaGroupParams,
+	}
+	mock.lockSendMediaGroup.Lock()
+	mock.calls.SendMediaGroup = append(mock.calls.SendMediaGroup, callInfo)
+	mock.lockSendMediaGroup.Unlock()
+	if mock.SendMediaGroupFunc == nil {
+		var (
+			messages []*models.Message
+			err      error
+		)
+		return messages, err
+	}
+	return mock.SendMediaGroupFunc(context1, sendMediaGroupParams)
+}
+
+// SendMediaGroupCalls gets all the calls that were made to SendMediaGroup.
+// Check the length with:
+//
+//	len(mockedclient.SendMediaGroupCalls())
+func (mock *MoqClient) SendMediaGroupCalls() []struct {
+	Context1             context.Context
+	SendMediaGroupParams *bot.SendMediaGroupParams
+} {
+	var calls []struct {
+		Context1             context.Context
+		SendMediaGroupParams *bot.SendMediaGroupParams
+	}
+	mock.lockSendMediaGroup.RLock()
+	calls = mock.calls.SendMediaGroup
+	mock.lockSendMediaGroup.RUnlock()
 	return calls
 }
 

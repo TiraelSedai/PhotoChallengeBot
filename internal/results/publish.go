@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/repository"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/require"
@@ -20,6 +21,11 @@ var achievementMilestones = map[int]struct{}{
 }
 
 const defaultSendTimeout = 10 * time.Second
+
+const (
+	resultPhotoBatchSize      = 10
+	telegramPhotoCaptionLimit = 1024
+)
 
 type challengeStore interface {
 	Get(context.Context, int64) (repository.Challenge, error)
@@ -56,8 +62,21 @@ type renderer interface {
 
 type publisher interface {
 	SendMarkdown(context.Context, int64, string) (int, error)
+	SendMarkdownPhoto(context.Context, int64, string, string) (int, error)
+	SendMarkdownPhotoGroup(context.Context, int64, []string, []string) (int, error)
 	SendText(context.Context, int64, string) (int, error)
 	Pin(context.Context, int64, int) error
+}
+
+type resultPost struct {
+	text    string
+	caption string
+	works   []resultWork
+}
+
+type resultWork struct {
+	work Work
+	line templates.ResultLine
 }
 
 type PublisherService struct {
@@ -147,16 +166,16 @@ func (s *PublisherService) publishOne(ctx context.Context, challenge repository.
 	}
 
 	messageID := 0
+	post, err := s.resultPost(ctx, challenge)
+	if err != nil {
+		s.releaseClaim(ctx, challenge.ID, claimedAt)
+		return err
+	}
 	if challenge.ResultsMessageID != nil {
 		messageID = int(*challenge.ResultsMessageID)
 	} else {
-		text, err := s.render(ctx, challenge)
-		if err != nil {
-			s.releaseClaim(ctx, challenge.ID, claimedAt)
-			return err
-		}
 		sendCtx, cancel := context.WithTimeout(ctx, s.sendFor)
-		sentID, err := s.publisher.SendMarkdown(sendCtx, challenge.MainChatID, text)
+		sentID, err := s.sendResultSummary(sendCtx, challenge.MainChatID, post)
 		cancel()
 		if err != nil {
 			s.releaseClaim(ctx, challenge.ID, claimedAt)
@@ -189,6 +208,13 @@ func (s *PublisherService) publishOne(ctx context.Context, challenge repository.
 	if err != nil {
 		s.releaseClaim(ctx, challenge.ID, claimedAt)
 		return fmt.Errorf("pin results for challenge %d: %w", challenge.ID, err)
+	}
+	sendCtx, cancel := context.WithTimeout(ctx, s.sendFor)
+	err = s.sendResultRanking(sendCtx, challenge.MainChatID, post)
+	cancel()
+	if err != nil {
+		s.releaseClaim(ctx, challenge.ID, claimedAt)
+		return fmt.Errorf("send result ranking for challenge %d: %w", challenge.ID, err)
 	}
 	persistCtx, cancel := s.persistContext(ctx)
 	pinned, err := s.challenges.MarkResultsPinned(persistCtx, challenge.ID, claimedAt, now)
@@ -305,17 +331,132 @@ func (s *PublisherService) publishAchievements(ctx context.Context, challenge re
 	return s.markAchievementsSent(ctx, challenge.ID, claimedAt, s.now())
 }
 
-func (s *PublisherService) render(ctx context.Context, challenge repository.Challenge) (string, error) {
+func (s *PublisherService) resultPost(ctx context.Context, challenge repository.Challenge) (resultPost, error) {
 	photos, votes, err := s.challengeInputs(ctx, challenge.ID)
 	if err != nil {
-		return "", err
+		return resultPost{}, err
 	}
 	result := Calculate(photos, votes)
-	data, err := s.templateData(ctx, challenge.Theme, result)
+	data, works, err := s.templateData(ctx, challenge.Theme, result)
 	if err != nil {
-		return "", err
+		return resultPost{}, err
 	}
-	return s.renderer.Results(data)
+	text, err := s.renderer.Results(data)
+	if err != nil {
+		return resultPost{}, err
+	}
+	caption := text
+	if utf8.RuneCountInString(caption) > telegramPhotoCaptionLimit {
+		caption = compactResultCaption(challenge.Theme, works)
+	}
+	return resultPost{text: text, caption: caption, works: works}, nil
+}
+
+func (s *PublisherService) sendResultSummary(ctx context.Context, chatID int64, post resultPost) (int, error) {
+	winners := make([]resultWork, 0, len(post.works))
+	for _, work := range post.works {
+		if work.line.Winner {
+			winners = append(winners, work)
+		}
+	}
+	if len(winners) == 0 {
+		return s.publisher.SendMarkdown(ctx, chatID, post.text)
+	}
+
+	messageID := 0
+	for start := 0; start < len(winners); start += resultPhotoBatchSize {
+		end := min(start+resultPhotoBatchSize, len(winners))
+		fileIDs := make([]string, 0, end-start)
+		captions := make([]string, 0, end-start)
+		for idx := start; idx < end; idx++ {
+			fileIDs = append(fileIDs, winners[idx].work.Photo.FileID)
+			caption := ""
+			if idx == 0 {
+				caption = post.caption
+			}
+			captions = append(captions, caption)
+		}
+		sentID, err := s.sendMarkdownPhotos(ctx, chatID, fileIDs, captions)
+		if err != nil {
+			return 0, err
+		}
+		if messageID == 0 {
+			messageID = sentID
+		}
+	}
+	return messageID, nil
+}
+
+func (s *PublisherService) sendResultRanking(ctx context.Context, chatID int64, post resultPost) error {
+	for start := 0; start < len(post.works); start += resultPhotoBatchSize {
+		end := min(start+resultPhotoBatchSize, len(post.works))
+		fileIDs := make([]string, 0, end-start)
+		captions := make([]string, 0, end-start)
+		for idx := start; idx < end; idx++ {
+			fileIDs = append(fileIDs, post.works[idx].work.Photo.FileID)
+			captions = append(captions, resultRankingCaption(idx+1, post.works[idx].line))
+		}
+		if _, err := s.sendMarkdownPhotos(ctx, chatID, fileIDs, captions); err != nil {
+			return fmt.Errorf("send ranking photos %d-%d: %w", start+1, end, err)
+		}
+	}
+	return nil
+}
+
+func (s *PublisherService) sendMarkdownPhotos(ctx context.Context, chatID int64, fileIDs []string, captions []string) (int, error) {
+	if len(fileIDs) == 1 {
+		return s.publisher.SendMarkdownPhoto(ctx, chatID, fileIDs[0], captions[0])
+	}
+	return s.publisher.SendMarkdownPhotoGroup(ctx, chatID, fileIDs, captions)
+}
+
+func resultRankingCaption(place int, line templates.ResultLine) string {
+	return fmt.Sprintf("%d. %s, %s\nЛайков: %d",
+		place,
+		templates.EscapeMarkdown(shortenCaptionText(line.AuthorHandle, 80)),
+		templates.EscapeMarkdown(shortenCaptionText(line.FullName, 380)),
+		line.Likes,
+	)
+}
+
+func compactResultCaption(theme string, works []resultWork) string {
+	winners := make([]resultWork, 0, len(works))
+	for _, work := range works {
+		if work.line.Winner {
+			winners = append(winners, work)
+		}
+	}
+	themeText := templates.EscapeMarkdown(shortenCaptionText(theme, 180))
+	if len(winners) == 1 {
+		winner := winners[0].line
+		return fmt.Sprintf("Итоги челленджа %s.\n\nПобедила фотография: %s, %s\nЛайков: %d\n\nПоздравляем!",
+			themeText,
+			templates.EscapeMarkdown(shortenCaptionText(winner.AuthorHandle, 80)),
+			templates.EscapeMarkdown(shortenCaptionText(winner.FullName, 180)),
+			winner.Likes,
+		)
+	}
+	likes := 0
+	if len(winners) > 0 {
+		likes = winners[0].line.Likes
+	}
+	return fmt.Sprintf("Победитель не один!\n\nИтоги челленджа %s.\n\nПобедителей: %d\nЛайков у победителей: %d",
+		themeText,
+		len(winners),
+		likes,
+	)
+}
+
+func shortenCaptionText(value string, maxRunes int) string {
+	trimmed := strings.TrimSpace(value)
+	runes := []rune(trimmed)
+	if len(runes) <= maxRunes {
+		return trimmed
+	}
+	if maxRunes <= 3 {
+		return string(runes[:maxRunes])
+	}
+	return strings.TrimSpace(string(runes[:maxRunes-3])) + "..."
 }
 
 func (s *PublisherService) challengeInputs(ctx context.Context, challengeID int64) ([]repository.Photo, []repository.Vote, error) {
@@ -330,13 +471,14 @@ func (s *PublisherService) challengeInputs(ctx context.Context, challengeID int6
 	return photos, votes, nil
 }
 
-func (s *PublisherService) templateData(ctx context.Context, theme string, result Result) (templates.ResultsData, error) {
+func (s *PublisherService) templateData(ctx context.Context, theme string, result Result) (templates.ResultsData, []resultWork, error) {
 	works := make([]templates.ResultLine, 0, len(result.Works))
+	resultWorks := make([]resultWork, 0, len(result.Works))
 	winners := make([]templates.ResultLine, 0, len(result.WinnerPhotoIDs))
 	for _, work := range result.Works {
 		user, err := s.users.Get(ctx, work.AuthorUserID)
 		if err != nil {
-			return templates.ResultsData{}, err
+			return templates.ResultsData{}, nil, err
 		}
 		line := templates.ResultLine{
 			AuthorHandle: authorHandle(user),
@@ -345,6 +487,7 @@ func (s *PublisherService) templateData(ctx context.Context, theme string, resul
 			Winner:       work.Winner,
 		}
 		works = append(works, line)
+		resultWorks = append(resultWorks, resultWork{work: work, line: line})
 		if work.Winner {
 			winners = append(winners, line)
 		}
@@ -355,7 +498,7 @@ func (s *PublisherService) templateData(ctx context.Context, theme string, resul
 		MultipleWinners: len(winners) > 1,
 		Winners:         winners,
 		Works:           works,
-	}, nil
+	}, resultWorks, nil
 }
 
 func authorHandle(user repository.User) string {
