@@ -114,7 +114,7 @@ func TestCreateChallengeFlowUsesCustomApprovedText(t *testing.T) {
 		t.Fatalf("main sends after custom text = %d, want 0", got)
 	}
 	lastAdmin := publisher.sent[len(publisher.sent)-1]
-	if lastAdmin.chatID != -2002 || lastAdmin.text != "Кастомный анонс #water\n\nДля публикации пришли `ОК`; любое другое сообщение заменит текст анонса." {
+	if lastAdmin.chatID != -2002 || lastAdmin.text != "Кастомный анонс #water\n\n"+approvePrompt {
 		t.Fatalf("custom confirmation = %#v", lastAdmin)
 	}
 
@@ -137,6 +137,122 @@ func TestCreateChallengeFlowUsesCustomApprovedText(t *testing.T) {
 	wantUntil := time.Date(2026, 6, 18, 18, 0, 0, 0, mustAdminLocation(t))
 	if !open.AcceptUntilAt.Equal(wantUntil) {
 		t.Fatalf("AcceptUntilAt = %s, want %s", open.AcceptUntilAt, wantUntil)
+	}
+}
+
+func TestCreateChallengeFlowRestartsFromApprovalOnCreateCommand(t *testing.T) {
+	t.Parallel()
+
+	tests := []string{"/challenge", "/new"}
+	for _, restartCommand := range tests {
+		t.Run(restartCommand, func(t *testing.T) {
+			t.Parallel()
+
+			database := openAdminTestDB(t)
+			defer database.Close()
+			publisher := newCreateChallengePublisherDeps(225)
+			handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
+
+			for _, text := range []string{"/challenge", "Вода", "#water", "ОК"} {
+				if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
+					t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
+				}
+			}
+
+			if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(restartCommand)); err != nil {
+				t.Fatalf("HandleAdminChatMessage(restart) error = %v", err)
+			}
+			if err := handler.HandleAdminChatMessage(context.Background(), adminMessage("Ночная улица")); err != nil {
+				t.Fatalf("HandleAdminChatMessage(theme) error = %v", err)
+			}
+
+			if got := publisher.countSendsTo(-1001); got != 0 {
+				t.Fatalf("main sends after restart = %d, want 0", got)
+			}
+			session, err := repository.NewAdminSessions(database).Get(context.Background(), -2002, 10)
+			if err != nil {
+				t.Fatalf("Get session error = %v", err)
+			}
+			if session == nil || session.Step != stepHashtag {
+				t.Fatalf("session = %#v, want hashtag step after new theme", session)
+			}
+			if !strings.Contains(session.PayloadJSON, `"theme":"Ночная улица"`) {
+				t.Fatalf("session payload = %q, want restarted theme", session.PayloadJSON)
+			}
+		})
+	}
+}
+
+func TestCreateChallengeFlowCancelsFromApproval(t *testing.T) {
+	t.Parallel()
+
+	tests := []string{"/cancel", "отмена"}
+	for _, cancelText := range tests {
+		t.Run(cancelText, func(t *testing.T) {
+			t.Parallel()
+
+			database := openAdminTestDB(t)
+			defer database.Close()
+			publisher := newCreateChallengePublisherDeps(240)
+			handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
+
+			for _, text := range []string{"/challenge", "Вода", "#water", "ОК"} {
+				if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
+					t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
+				}
+			}
+			if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(cancelText)); err != nil {
+				t.Fatalf("HandleAdminChatMessage(%q) error = %v", cancelText, err)
+			}
+
+			if got := publisher.countSendsTo(-1001); got != 0 {
+				t.Fatalf("main sends after cancel = %d, want 0", got)
+			}
+			session, err := repository.NewAdminSessions(database).Get(context.Background(), -2002, 10)
+			if err != nil {
+				t.Fatalf("Get session error = %v", err)
+			}
+			if session != nil {
+				t.Fatalf("session = %#v, want nil after cancel", session)
+			}
+			lastAdmin := publisher.sent[len(publisher.sent)-1]
+			if !strings.Contains(lastAdmin.text, "Создание челленджа отменено") {
+				t.Fatalf("last admin message = %q, want cancel confirmation", lastAdmin.text)
+			}
+		})
+	}
+}
+
+func TestCreateChallengeFlowDoesNotUseSlashCommandAsCustomAnnouncement(t *testing.T) {
+	t.Parallel()
+
+	database := openAdminTestDB(t)
+	defer database.Close()
+	publisher := newCreateChallengePublisherDeps(245)
+	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
+
+	for _, text := range []string{"/challenge", "Вода", "#water", "ОК"} {
+		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
+			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
+		}
+	}
+	sentBefore := len(publisher.sent)
+	if err := handler.HandleAdminChatMessage(context.Background(), adminMessage("/start")); err != nil {
+		t.Fatalf("HandleAdminChatMessage(command) error = %v", err)
+	}
+
+	if len(publisher.sent) != sentBefore {
+		t.Fatalf("sent after command = %d, want unchanged %d: %#v", len(publisher.sent), sentBefore, publisher.sent)
+	}
+	session, err := repository.NewAdminSessions(database).Get(context.Background(), -2002, 10)
+	if err != nil {
+		t.Fatalf("Get session error = %v", err)
+	}
+	if session == nil || !strings.Contains(session.PayloadJSON, `"draft_text"`) {
+		t.Fatalf("session = %#v, want approval session preserved", session)
+	}
+	if strings.Contains(session.PayloadJSON, `/start`) {
+		t.Fatalf("session payload = %q, want command not saved as announcement", session.PayloadJSON)
 	}
 }
 

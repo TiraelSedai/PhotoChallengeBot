@@ -21,6 +21,7 @@ const (
 	stepHashtag         = "hashtag"
 	stepDates           = "dates"
 	stepApprove         = "approve"
+	approvePrompt       = "Для публикации пришли `ОК`; любое другое сообщение заменит текст анонса. Для отмены пришли `/cancel` или `отмена`."
 )
 
 type sessionStore interface {
@@ -141,6 +142,16 @@ func (h *CreateChallengeHandler) HandleAdminChatMessage(ctx context.Context, mes
 	if session.Flow != createChallengeFlow {
 		return nil
 	}
+	if isCancelCreateChallengeCommand(text, h.currentBotUsername()) {
+		return h.cancel(ctx, adminUser.ID)
+	}
+	if isCreateChallengeCommand(text, h.currentBotUsername()) {
+		return h.start(ctx, adminUser.ID)
+	}
+	fields := strings.Fields(text)
+	if len(fields) > 0 && strings.HasPrefix(fields[0], "/") {
+		return nil
+	}
 
 	switch session.Step {
 	case stepTheme:
@@ -161,6 +172,14 @@ func (h *CreateChallengeHandler) start(ctx context.Context, adminUserID int64) e
 		return err
 	}
 	_, err := h.publisher.SendMarkdown(ctx, h.adminChatID, "Пришли тему челленджа.")
+	return err
+}
+
+func (h *CreateChallengeHandler) cancel(ctx context.Context, adminUserID int64) error {
+	if err := h.sessions.Clear(ctx, h.adminChatID, adminUserID); err != nil {
+		return err
+	}
+	_, err := h.publisher.SendMarkdown(ctx, h.adminChatID, "Создание челленджа отменено.")
 	return err
 }
 
@@ -257,7 +276,7 @@ func (h *CreateChallengeHandler) acceptDates(ctx context.Context, adminUserID in
 		return err
 	}
 
-	_, err = h.publisher.SendMarkdown(ctx, h.adminChatID, draft+"\n\nДля публикации пришли `ОК`; любое другое сообщение заменит текст анонса.")
+	_, err = h.publisher.SendMarkdown(ctx, h.adminChatID, draft+"\n\n"+approvePrompt)
 	return err
 }
 
@@ -296,7 +315,7 @@ func (h *CreateChallengeHandler) approve(ctx context.Context, adminUserID int64,
 		if err := h.savePayload(ctx, adminUserID, stepApprove, payload); err != nil {
 			return err
 		}
-		_, err = h.publisher.SendText(ctx, h.adminChatID, announcementText+"\n\nДля публикации пришли `ОК`; любое другое сообщение заменит текст анонса.")
+		_, err = h.publisher.SendText(ctx, h.adminChatID, announcementText+"\n\n"+approvePrompt)
 		return err
 	}
 
@@ -451,6 +470,26 @@ func isCreateChallengeCommand(text string, botUsername string) bool {
 	return command == "/new" ||
 		command == "/challenge" ||
 		normalized == "создать челлендж"
+}
+
+func isCancelCreateChallengeCommand(text string, botUsername string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(text))
+	if normalized == "отмена" {
+		return true
+	}
+
+	fields := strings.Fields(normalized)
+	if len(fields) == 0 {
+		return false
+	}
+	parts := strings.SplitN(fields[0], "@", 2)
+	if len(parts) == 2 {
+		username := strings.TrimSpace(parts[1])
+		if username == "" || username != strings.ToLower(strings.TrimPrefix(botUsername, "@")) {
+			return false
+		}
+	}
+	return parts[0] == "/cancel"
 }
 
 func isCommandMentionedToOtherBot(text string, botUsername string) bool {
