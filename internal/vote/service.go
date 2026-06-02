@@ -111,7 +111,7 @@ func (s *Service) HandlePrivateStart(ctx context.Context, message *models.Messag
 		return s.sendStartError(ctx, message.Chat.ID, err)
 	}
 
-	_, err = s.publisher.SendPhoto(ctx, message.Chat.ID, view.Photo.FileID, caption(view), keyboard(view))
+	_, err = s.publisher.SendPhoto(ctx, message.Chat.ID, view.Photo.FileID, "", keyboard(view))
 	if err != nil {
 		return fmt.Errorf("send vote photo: %w", err)
 	}
@@ -146,7 +146,7 @@ func (s *Service) HandleCallbackQuery(ctx context.Context, query *models.Callbac
 		return s.publisher.AnswerCallback(ctx, query.ID, result.answer)
 	}
 
-	if err := s.publisher.EditPhoto(ctx, message.Chat.ID, message.ID, result.view.Photo.FileID, caption(result.view), keyboard(result.view)); err != nil {
+	if err := s.publisher.EditPhoto(ctx, message.Chat.ID, message.ID, result.view.Photo.FileID, "", keyboard(result.view)); err != nil {
 		if answerErr := s.publisher.AnswerCallback(ctx, query.ID, result.answer); answerErr != nil {
 			return fmt.Errorf("edit vote photo: %w; answer callback: %v", err, answerErr)
 		}

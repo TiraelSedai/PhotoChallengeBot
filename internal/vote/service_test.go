@@ -29,6 +29,9 @@ func TestHandlePrivateStartCreatesAndReusesVoteOrder(t *testing.T) {
 	if len(publisher.photos) != 1 {
 		t.Fatalf("sent photos = %d, want 1", len(publisher.photos))
 	}
+	if publisher.photos[0].caption != "" {
+		t.Fatalf("sent caption = %q, want empty caption", publisher.photos[0].caption)
+	}
 
 	votes := repository.NewVotes(database)
 	firstOrder, err := votes.ListVoteOrder(context.Background(), challengeID, 20)
@@ -177,6 +180,9 @@ func TestHandleCallbackNavigatesAndTogglesManualVote(t *testing.T) {
 	}
 	if len(publisher.edits) != 1 {
 		t.Fatalf("edits = %d, want 1", len(publisher.edits))
+	}
+	if publisher.edits[0].caption != "" {
+		t.Fatalf("edited caption = %q, want empty caption", publisher.edits[0].caption)
 	}
 	if got := publisher.answers[len(publisher.answers)-1].text; got != voteAcceptedMessage {
 		t.Fatalf("answer = %q, want vote accepted", got)

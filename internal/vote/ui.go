@@ -26,10 +26,6 @@ type View struct {
 	OwnPhoto    bool
 }
 
-func caption(view View) string {
-	return fmt.Sprintf("%d/%d", view.Position+1, view.Total)
-}
-
 func keyboard(view View) *models.InlineKeyboardMarkup {
 	likeText := "♡"
 	likeAction := actionToggle
