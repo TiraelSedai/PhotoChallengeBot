@@ -21,6 +21,7 @@ const (
 	inactiveVoteMessage    = "Эта голосовалка неактивна"
 	notPrivateVoteMessage  = "Голосовать можно только в приватном чате"
 	selfVoteMessage        = "Голосовать можно только за фото других участников!"
+	ownPhotoMessage        = "Это твоё фото, дурачок"
 	voteAcceptedMessage    = "Голос принят. Спасибо, пирожочек!"
 )
 
@@ -273,6 +274,15 @@ func (s *Service) applyCallback(ctx context.Context, challengeID int64, clickedP
 		}
 		answer = voteAcceptedMessage
 		changed = true
+	case actionOwnPhoto:
+		current, err := s.view(ctx, challenge.ID, voterID, order, photos, position)
+		if err != nil {
+			return callbackResult{}, err
+		}
+		if !current.OwnPhoto {
+			return callbackResult{}, ErrVotingInactive
+		}
+		return callbackResult{view: current, answer: ownPhotoMessage}, nil
 	default:
 		return callbackResult{}, ErrVotingInactive
 	}
@@ -450,7 +460,7 @@ func parseCallbackData(data string) (callbackPayload, bool) {
 		return callbackPayload{}, false
 	}
 	switch parts[3] {
-	case actionPrevious, actionNext, actionToggle, actionNoop:
+	case actionPrevious, actionNext, actionToggle, actionNoop, actionOwnPhoto:
 		return callbackPayload{challengeID: challengeID, photoID: photoID, action: parts[3]}, true
 	default:
 		return callbackPayload{}, false

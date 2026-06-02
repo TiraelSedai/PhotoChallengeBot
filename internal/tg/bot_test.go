@@ -124,6 +124,9 @@ func TestRunnerSendsAndPinsMarkdownMessage(t *testing.T) {
 	if len(pinCalls) != 1 || pinCalls[0].PinChatMessageParams.ChatID != int64(-1001) || pinCalls[0].PinChatMessageParams.MessageID != 101 {
 		t.Fatalf("pin calls = %#v, want message 101", pinCalls)
 	}
+	if pinCalls[0].PinChatMessageParams.DisableNotification {
+		t.Fatal("DisableNotification = true, want notified pin")
+	}
 }
 
 func TestRunnerSendsPlainTextMessage(t *testing.T) {

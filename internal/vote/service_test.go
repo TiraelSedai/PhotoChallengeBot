@@ -69,8 +69,8 @@ func TestHandlePrivateStartShowsOwnPhotoWithDisabledGreenHeart(t *testing.T) {
 	if button.Text != "💚" {
 		t.Fatalf("own photo heart = %q, want green heart", button.Text)
 	}
-	if button.CallbackData != callbackData(challengeID, 1, actionNoop) {
-		t.Fatalf("own photo callback = %q, want noop", button.CallbackData)
+	if button.CallbackData != callbackData(challengeID, 1, actionOwnPhoto) {
+		t.Fatalf("own photo callback = %q, want own-photo action", button.CallbackData)
 	}
 }
 
@@ -500,6 +500,76 @@ func TestHandleCallbackRejectsSelfManualVote(t *testing.T) {
 		if vote.Kind == repository.VoteKindManual {
 			t.Fatalf("manual self vote stored: %#v", vote)
 		}
+	}
+}
+
+func TestHandleCallbackAnswersOwnPhotoHeartWithoutEditing(t *testing.T) {
+	database := openVoteTestDB(t)
+	defer database.Close()
+	challengeID := createVotingChallenge(t, database, 11)
+	publisher := newVotePublisherDeps(errors.New("message is not modified"))
+	service := newVoteTestService(database, publisher)
+	ctx := context.Background()
+
+	if err := service.HandlePrivateStart(ctx, privateStartMessage(11, "/start "+voteStartToken(t, database, challengeID)), voteStartToken(t, database, challengeID)); err != nil {
+		t.Fatalf("HandlePrivateStart() error = %v", err)
+	}
+	order, err := repository.NewVotes(database).ListVoteOrder(ctx, challengeID, 11)
+	if err != nil {
+		t.Fatalf("ListVoteOrder() error = %v", err)
+	}
+	if err := service.HandleCallbackQuery(ctx, voteCallback(11, "cb-own", callbackData(challengeID, order[0].PhotoID, actionOwnPhoto))); err != nil {
+		t.Fatalf("own heart HandleCallbackQuery() error = %v", err)
+	}
+
+	if len(publisher.edits) != 0 {
+		t.Fatalf("edits = %d, want 0 for own-photo heart", len(publisher.edits))
+	}
+	if got := publisher.answers[len(publisher.answers)-1].text; got != ownPhotoMessage {
+		t.Fatalf("answer = %q, want own-photo message", got)
+	}
+}
+
+func TestHandleCallbackAnswersOwnPhotoHeartFromInaccessibleMessageAsInactive(t *testing.T) {
+	database := openVoteTestDB(t)
+	defer database.Close()
+	challengeID := createVotingChallenge(t, database, 11)
+	publisher := newVotePublisherDeps(nil)
+	service := newVoteTestService(database, publisher)
+
+	query := voteCallback(11, "cb-own-inaccessible", callbackData(challengeID, 1, actionOwnPhoto))
+	query.Message = models.MaybeInaccessibleMessage{
+		Type: models.MaybeInaccessibleMessageTypeInaccessibleMessage,
+		InaccessibleMessage: &models.InaccessibleMessage{
+			Chat:      models.Chat{ID: 11, Type: models.ChatTypePrivate},
+			MessageID: 1000,
+		},
+	}
+	if err := service.HandleCallbackQuery(context.Background(), query); err != nil {
+		t.Fatalf("HandleCallbackQuery() error = %v", err)
+	}
+
+	if len(publisher.answers) != 1 || publisher.answers[0].text != inactiveVoteMessage {
+		t.Fatalf("answers = %#v, want inactive callback answer", publisher.answers)
+	}
+}
+
+func TestHandleCallbackAnswersOwnPhotoHeartFromFinishedVoteAsInactive(t *testing.T) {
+	database := openVoteTestDB(t)
+	defer database.Close()
+	challengeID := createVotingChallenge(t, database, 11)
+	if _, err := repository.NewChallenges(database).FinishVoting(context.Background(), challengeID, testVoteTime(21*24*time.Hour)); err != nil {
+		t.Fatalf("FinishVoting() error = %v", err)
+	}
+	publisher := newVotePublisherDeps(nil)
+	service := newVoteTestService(database, publisher)
+
+	if err := service.HandleCallbackQuery(context.Background(), voteCallback(11, "cb-own-finished", callbackData(challengeID, 1, actionOwnPhoto))); err != nil {
+		t.Fatalf("HandleCallbackQuery() error = %v", err)
+	}
+
+	if len(publisher.answers) != 1 || publisher.answers[0].text != inactiveVoteMessage {
+		t.Fatalf("answers = %#v, want inactive callback answer", publisher.answers)
 	}
 }
 

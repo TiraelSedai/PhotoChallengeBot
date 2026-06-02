@@ -154,8 +154,9 @@ func (r *Runner) AnswerCallback(ctx context.Context, callbackID string, text str
 
 func (r *Runner) Pin(ctx context.Context, chatID int64, messageID int) error {
 	ok, err := r.client.PinChatMessage(ctx, &tgbot.PinChatMessageParams{
-		ChatID:    chatID,
-		MessageID: messageID,
+		ChatID:              chatID,
+		MessageID:           messageID,
+		DisableNotification: false,
 	})
 	if err != nil {
 		return fmt.Errorf("pin telegram message: %w", err)

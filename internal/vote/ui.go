@@ -14,6 +14,7 @@ const (
 	actionNext     = "next"
 	actionToggle   = "like"
 	actionNoop     = "noop"
+	actionOwnPhoto = "own"
 )
 
 type View struct {
@@ -37,7 +38,7 @@ func keyboard(view View) *models.InlineKeyboardMarkup {
 	}
 	if view.OwnPhoto {
 		likeText = "💚"
-		likeAction = actionNoop
+		likeAction = actionOwnPhoto
 	}
 
 	nav := make([]models.InlineKeyboardButton, 0, 3)
