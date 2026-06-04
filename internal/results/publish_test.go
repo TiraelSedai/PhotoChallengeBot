@@ -130,19 +130,24 @@ func TestPublisherSendsRankingPhotosInBatchesOfTen(t *testing.T) {
 	if publisher.photoGroups[0].fileIDs[0] != "file-01" {
 		t.Fatalf("first ranking photo = %q, want winner repeated as first place", publisher.photoGroups[0].fileIDs[0])
 	}
-	captionChecks := map[int]string{
-		0:  "1. @user01, User 01\nЛайков: 2",
-		9:  "10. @user10, User 10\nЛайков: 1",
-		10: "11. @user11, User 11\nЛайков: 1",
-		19: "20. @user20, User 20\nЛайков: 1",
-		20: "21. @user21, User 21\nЛайков: 1",
-		22: "23. @user23, User 23\nЛайков: 1",
+	groupChecks := []struct {
+		group   int
+		want    string
+		entries int
+	}{
+		{group: 0, want: "1. @user01, User 01 — Лайков: 2\n2. @user02, User 02 — Лайков: 1", entries: 10},
+		{group: 1, want: "11. @user11, User 11 — Лайков: 1", entries: 10},
+		{group: 2, want: "21. @user21, User 21 — Лайков: 1\n22. @user22, User 22 — Лайков: 1\n23. @user23, User 23 — Лайков: 1", entries: 3},
 	}
-	for position, want := range captionChecks {
-		group := position / 10
-		offset := position % 10
-		if got := publisher.photoGroups[group].captions[offset]; got != want {
-			t.Fatalf("caption %d = %q, want %q", position+1, got, want)
+	for _, check := range groupChecks {
+		captions := publisher.photoGroups[check.group].captions
+		if !strings.Contains(captions[0], check.want) {
+			t.Fatalf("group %d caption = %q, want to contain %q", check.group, captions[0], check.want)
+		}
+		for offset := 1; offset < check.entries; offset++ {
+			if captions[offset] != "" {
+				t.Fatalf("group %d caption[%d] = %q, want empty", check.group, offset, captions[offset])
+			}
 		}
 	}
 }
@@ -217,7 +222,7 @@ func TestPublisherKeepsRankingCaptionWithinTelegramLimit(t *testing.T) {
 	if !strings.HasPrefix(rankingCaption, "1. @long\\_name\\_") {
 		t.Fatalf("ranking caption = %q, want escaped author prefix", rankingCaption)
 	}
-	if !strings.Contains(rankingCaption, "...\nЛайков: 1") {
+	if !strings.Contains(rankingCaption, "... — Лайков: 1") {
 		t.Fatalf("ranking caption = %q, want shortened name and likes", rankingCaption)
 	}
 }

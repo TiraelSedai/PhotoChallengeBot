@@ -25,6 +25,8 @@ const defaultSendTimeout = 10 * time.Second
 const (
 	resultPhotoBatchSize      = 10
 	telegramPhotoCaptionLimit = 1024
+	rankingHandleLimit        = 48
+	rankingNameLimit          = 80
 )
 
 type challengeStore interface {
@@ -391,11 +393,12 @@ func (s *PublisherService) sendResultRanking(ctx context.Context, chatID int64, 
 	for start := 0; start < len(post.works); start += resultPhotoBatchSize {
 		end := min(start+resultPhotoBatchSize, len(post.works))
 		fileIDs := make([]string, 0, end-start)
-		captions := make([]string, 0, end-start)
+		captions := make([]string, end-start)
 		for idx := start; idx < end; idx++ {
 			fileIDs = append(fileIDs, post.works[idx].work.Photo.FileID)
-			captions = append(captions, resultRankingCaption(idx+1, post.works[idx].line))
 		}
+		// Telegram shows only the first album element's caption under the group.
+		captions[0] = resultRankingCaption(start+1, post.works[start:end])
 		if _, err := s.sendMarkdownPhotos(ctx, chatID, fileIDs, captions); err != nil {
 			return fmt.Errorf("send ranking photos %d-%d: %w", start+1, end, err)
 		}
@@ -410,13 +413,23 @@ func (s *PublisherService) sendMarkdownPhotos(ctx context.Context, chatID int64,
 	return s.publisher.SendMarkdownPhotoGroup(ctx, chatID, fileIDs, captions)
 }
 
-func resultRankingCaption(place int, line templates.ResultLine) string {
-	return fmt.Sprintf("%d. %s, %s\nЛайков: %d",
-		place,
-		templates.EscapeMarkdown(shortenCaptionText(line.AuthorHandle, 80)),
-		templates.EscapeMarkdown(shortenCaptionText(line.FullName, 380)),
-		line.Likes,
-	)
+func resultRankingCaption(startPlace int, works []resultWork) string {
+	lines := make([]string, 0, len(works))
+	for idx, work := range works {
+		lines = append(lines, fmt.Sprintf("%d. %s, %s — Лайков: %d",
+			startPlace+idx,
+			templates.EscapeMarkdown(shortenCaptionText(work.line.AuthorHandle, rankingHandleLimit)),
+			templates.EscapeMarkdown(shortenCaptionText(work.line.FullName, rankingNameLimit)),
+			work.line.Likes,
+		))
+	}
+	caption := strings.Join(lines, "\n")
+	// Drop whole lines rather than cutting mid-line, which would break Markdown escaping.
+	for len(lines) > 1 && utf8.RuneCountInString(caption) > telegramPhotoCaptionLimit {
+		lines = lines[:len(lines)-1]
+		caption = strings.Join(lines, "\n")
+	}
+	return caption
 }
 
 func compactResultCaption(theme string, works []resultWork) string {
