@@ -432,6 +432,8 @@ func resultRankingCaption(startPlace int, works []resultWork) string {
 	return caption
 }
 
+// compactResultCaption mirrors results.md.tmpl but collapses the winner list to a
+// single line, for when the full caption would exceed Telegram's photo-caption limit.
 func compactResultCaption(theme string, works []resultWork) string {
 	winners := make([]resultWork, 0, len(works))
 	for _, work := range works {
@@ -439,25 +441,17 @@ func compactResultCaption(theme string, works []resultWork) string {
 			winners = append(winners, work)
 		}
 	}
-	themeText := templates.EscapeMarkdown(shortenCaptionText(theme, 180))
+	header := fmt.Sprintf("Итоги челленджа «%s».", templates.EscapeMarkdown(shortenCaptionText(theme, 180)))
 	if len(winners) == 1 {
 		winner := winners[0].line
-		return fmt.Sprintf("Итоги челленджа %s.\n\nПобедила фотография: %s, %s\nЛайков: %d\n\nПоздравляем!",
-			themeText,
+		return fmt.Sprintf("%s\n\nПобедитель:\n\n%s, %s — %d лайков\n\nПоздравляем! 🎉",
+			header,
 			templates.EscapeMarkdown(shortenCaptionText(winner.AuthorHandle, 80)),
 			templates.EscapeMarkdown(shortenCaptionText(winner.FullName, 180)),
 			winner.Likes,
 		)
 	}
-	likes := 0
-	if len(winners) > 0 {
-		likes = winners[0].line.Likes
-	}
-	return fmt.Sprintf("Победитель не один!\n\nИтоги челленджа %s.\n\nПобедителей: %d\nЛайков у победителей: %d",
-		themeText,
-		len(winners),
-		likes,
-	)
+	return fmt.Sprintf("%s\n\nПобедителей: %d\n\nПоздравляем! 🎉", header, len(winners))
 }
 
 func shortenCaptionText(value string, maxRunes int) string {

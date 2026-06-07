@@ -49,7 +49,7 @@ func TestPublisherPublishesPinsResultsAndSendsAchievement(t *testing.T) {
 	if publisher.photos[0].fileID != "file-1" {
 		t.Fatalf("winner photo file id = %q, want file-1", publisher.photos[0].fileID)
 	}
-	if !strings.Contains(publisher.photos[0].caption, "Итоги челленджа Night") {
+	if !strings.Contains(publisher.photos[0].caption, "Итоги челленджа «Night»") {
 		t.Fatalf("results caption = %q, want challenge results", publisher.photos[0].caption)
 	}
 	if len(publisher.photoGroups) != 1 || len(publisher.photoGroups[0].fileIDs) != 2 {

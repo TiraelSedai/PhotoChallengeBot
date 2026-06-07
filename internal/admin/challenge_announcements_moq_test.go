@@ -22,6 +22,9 @@ var _ challengeAnnouncements = &MoqChallengeAnnouncements{}
 //
 //		// make and configure a mocked challengeAnnouncements
 //		mockedchallengeAnnouncements := &MoqChallengeAnnouncements{
+//			FindLatestWithResultsFunc: func(context1 context.Context, n int64) (*repository.Challenge, error) {
+//				panic("mock out the FindLatestWithResults method")
+//			},
 //			GetFunc: func(context1 context.Context, n int64) (repository.Challenge, error) {
 //				panic("mock out the Get method")
 //			},
@@ -35,6 +38,9 @@ var _ challengeAnnouncements = &MoqChallengeAnnouncements{}
 //
 //	}
 type MoqChallengeAnnouncements struct {
+	// FindLatestWithResultsFunc mocks the FindLatestWithResults method.
+	FindLatestWithResultsFunc func(context1 context.Context, n int64) (*repository.Challenge, error)
+
 	// GetFunc mocks the Get method.
 	GetFunc func(context1 context.Context, n int64) (repository.Challenge, error)
 
@@ -43,6 +49,13 @@ type MoqChallengeAnnouncements struct {
 
 	// calls tracks calls to the methods.
 	calls struct {
+		// FindLatestWithResults holds details about calls to the FindLatestWithResults method.
+		FindLatestWithResults []struct {
+			// Context1 is the context1 argument value.
+			Context1 context.Context
+			// N is the n argument value.
+			N int64
+		}
 		// Get holds details about calls to the Get method.
 		Get []struct {
 			// Context1 is the context1 argument value.
@@ -62,8 +75,49 @@ type MoqChallengeAnnouncements struct {
 			Time1 time.Time
 		}
 	}
+	lockFindLatestWithResults    sync.RWMutex
 	lockGet                      sync.RWMutex
 	lockSetAnnouncementMessageID sync.RWMutex
+}
+
+// FindLatestWithResults calls FindLatestWithResultsFunc.
+func (mock *MoqChallengeAnnouncements) FindLatestWithResults(context1 context.Context, n int64) (*repository.Challenge, error) {
+	callInfo := struct {
+		Context1 context.Context
+		N        int64
+	}{
+		Context1: context1,
+		N:        n,
+	}
+	mock.lockFindLatestWithResults.Lock()
+	mock.calls.FindLatestWithResults = append(mock.calls.FindLatestWithResults, callInfo)
+	mock.lockFindLatestWithResults.Unlock()
+	if mock.FindLatestWithResultsFunc == nil {
+		var (
+			challenge *repository.Challenge
+			err       error
+		)
+		return challenge, err
+	}
+	return mock.FindLatestWithResultsFunc(context1, n)
+}
+
+// FindLatestWithResultsCalls gets all the calls that were made to FindLatestWithResults.
+// Check the length with:
+//
+//	len(mockedchallengeAnnouncements.FindLatestWithResultsCalls())
+func (mock *MoqChallengeAnnouncements) FindLatestWithResultsCalls() []struct {
+	Context1 context.Context
+	N        int64
+} {
+	var calls []struct {
+		Context1 context.Context
+		N        int64
+	}
+	mock.lockFindLatestWithResults.RLock()
+	calls = mock.calls.FindLatestWithResults
+	mock.lockFindLatestWithResults.RUnlock()
+	return calls
 }
 
 // Get calls GetFunc.
