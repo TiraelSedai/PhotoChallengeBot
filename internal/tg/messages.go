@@ -67,13 +67,18 @@ func (r *Runner) sendPhoto(
 	parseMode models.ParseMode,
 	replyMarkup *models.InlineKeyboardMarkup,
 ) (int, error) {
-	message, err := r.client.SendPhoto(ctx, &tgbot.SendPhotoParams{
-		ChatID:      chatID,
-		Photo:       &models.InputFileString{Data: fileID},
-		Caption:     caption,
-		ParseMode:   parseMode,
-		ReplyMarkup: replyMarkup,
-	})
+	params := &tgbot.SendPhotoParams{
+		ChatID:    chatID,
+		Photo:     &models.InputFileString{Data: fileID},
+		Caption:   caption,
+		ParseMode: parseMode,
+	}
+	// A typed-nil *InlineKeyboardMarkup in the ReplyMarkup interface field marshals
+	// to `reply_markup: null`, which Telegram rejects ("object expected as reply markup").
+	if replyMarkup != nil {
+		params.ReplyMarkup = replyMarkup
+	}
+	message, err := r.client.SendPhoto(ctx, params)
 	if err != nil {
 		return 0, fmt.Errorf("send telegram photo: %w", err)
 	}
@@ -123,15 +128,18 @@ func (r *Runner) EditPhoto(
 	caption string,
 	replyMarkup *models.InlineKeyboardMarkup,
 ) error {
-	_, err := r.client.EditMessageMedia(ctx, &tgbot.EditMessageMediaParams{
+	params := &tgbot.EditMessageMediaParams{
 		ChatID:    chatID,
 		MessageID: messageID,
 		Media: &models.InputMediaPhoto{
 			Media:   fileID,
 			Caption: caption,
 		},
-		ReplyMarkup: replyMarkup,
-	})
+	}
+	if replyMarkup != nil {
+		params.ReplyMarkup = replyMarkup
+	}
+	_, err := r.client.EditMessageMedia(ctx, params)
 	if err != nil {
 		return fmt.Errorf("edit telegram photo: %w", err)
 	}
