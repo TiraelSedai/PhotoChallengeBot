@@ -842,6 +842,26 @@ func (r *Challenges) FindOpenByMainChatID(ctx context.Context, mainChatID int64)
 	return &challenge, nil
 }
 
+func (r *Challenges) FindLatestWithResults(ctx context.Context, mainChatID int64) (*Challenge, error) {
+	var row challengeRow
+	if err := r.db.GetContext(ctx, &row, challengeSelectSQL+`
+		WHERE main_chat_id = ? AND results_message_id IS NOT NULL
+		ORDER BY finished_at DESC, id DESC
+		LIMIT 1
+	`, mainChatID); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find latest challenge with results: %w", err)
+	}
+
+	challenge, err := row.challenge()
+	if err != nil {
+		return nil, err
+	}
+	return &challenge, nil
+}
+
 const challengeSelectSQL = `
 	SELECT id, main_chat_id, num, theme, hashtag, state, accept_start_at,
 		accept_until_at, reminder_at, reminder_sending_at, reminder_sent_at,

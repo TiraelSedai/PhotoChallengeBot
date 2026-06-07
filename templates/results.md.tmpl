@@ -1,22 +1,21 @@
 {{- if .NoWinners -}}
-Победителя нет. Еще никто не проголосовал.
+Пока нет победителя — ещё никто не проголосовал.
 {{- else -}}
-{{- if .MultipleWinners -}}
-Победитель не один!
+Итоги челленджа «{{md .Theme}}».
 
-Итоги челленджа {{md .Theme}}.
-
-Победили:
-{{- range .Winners }}
-- {{md .AuthorHandle}}, {{md .FullName}} — лайков: {{.Likes}}
+{{ if .MultipleWinners -}}
+Победители:
+{{ range .Winners }}
+• {{md .AuthorHandle}}, {{md .FullName}} — {{.Likes}} лайков
 {{- end }}
+
+Поздравляем! 🎉
 {{- else -}}
-{{- $winner := index .Winners 0 -}}
-Итоги челленджа {{md .Theme}}.
+Победитель:
 
-Победила фотография: {{md $winner.AuthorHandle}}, {{md $winner.FullName}}
-Лайков: {{$winner.Likes}}
+{{ $winner := index .Winners 0 -}}
+{{md $winner.AuthorHandle}}, {{md $winner.FullName}} — {{$winner.Likes}} лайков
 
-Поздравляем!
+Поздравляем! 🎉
 {{- end }}
 {{- end }}

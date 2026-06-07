@@ -3,6 +3,7 @@ package templates
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -87,24 +88,47 @@ func TestChallengeAnnouncementSnapshot(t *testing.T) {
 		t.Fatalf("Render() error = %v", err)
 	}
 
-	want := `*Челлендж 12 - Ночь\_город \*финал\* \[test]*
+	want := `Челлендж 12 — Ночь\_город \*финал\* \[test]
 
-Свежие фото присылайте в чат с 1 июня:
-- до вечера четверга, 18 июня;
-- на конкурс идет одна актуальная фотография от участника;
-- если прислать новую фотографию с тегом челленджа, она заменит старую;
-- фото должно быть сделано в промежутке с 1 июня по 18 июня;
-- под фото для конкурса пишите тег #photo\_challenge\[12]
+Фото присылайте до 18:00 МСК четверга, 18 июня. Можно несколько, но в конкурс пойдёт только первое.
 
-Тема трактуется свободно, но:
-- без животных;
-- без нюдсов;
-- без жестокости.
+Фото должно быть снято с 1 июня по 18 июня. Под фото ставьте тег #photo\_challenge\[12].
 
-В конце пришлю форму для голосования. Победитель получит ачивку в клубе, а фоточка отправится на обложку чата.
+Тему трактуем свободно, но без животных, нюдсов и жестокости.
+
+В конце пришлю форму для голосования.
+
+Победитель получит ачивку в Клубе, а его фото станет обложкой чата.
 `
 	if got != want {
 		t.Fatalf("challenge announcement snapshot mismatch\n got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestChallengeAnnouncementIncludesPreviousResultsLink(t *testing.T) {
+	t.Parallel()
+
+	renderer, err := Load(filepath.Join("..", "..", "templates"))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	got, err := renderer.Render(ChallengeAnnouncementTemplate, ChallengeAnnouncementData{
+		Num:             12,
+		Theme:           "Ночь",
+		Hashtag:         "#photo",
+		StartDate:       "1 июня",
+		EndDate:         "18 июня",
+		EndWeekday:      "четверга",
+		PrevResultsLink: "https://t.me/c/1272818469/42",
+	})
+	if err != nil {
+		t.Fatalf("Render() error = %v", err)
+	}
+
+	wantLine := "\n\nРезультаты прошлого челленджа — [вот тут](https://t.me/c/1272818469/42).\n"
+	if !strings.HasSuffix(got, wantLine) {
+		t.Fatalf("challenge announcement missing previous results link\n got:\n%s", got)
 	}
 }
 
@@ -126,12 +150,11 @@ func TestVoteStartSnapshot(t *testing.T) {
 		t.Fatalf("VoteStart() error = %v", err)
 	}
 
-	want := `Закончился челлендж Ночь\_город \*финал\* \[test]: 31 фоток ушло на голосование.
+	want := `Челлендж «Ночь\_город \*финал\* \[test]» закончился. На голосование ушло 31 фото.
 
-Рассматриваем работы и голосуем [вот тут](https://t.me/photoshnaya_bot?start=-1001272818469_3)
-Голосовать можно за несколько фоток.
+Смотрим работы и голосуем [вот тут](https://t.me/photoshnaya_bot?start=-1001272818469_3). Голосовать можно за несколько фото.
 
-Победитель получит ачивку в клубе, а фоточка отправится на обложку чата.
+Победитель получит ачивку в Клубе, а его фото станет обложкой чата.
 
 Итоги подведу 20 мая в 18:00 МСК.
 
@@ -139,6 +162,88 @@ func TestVoteStartSnapshot(t *testing.T) {
 `
 	if got != want {
 		t.Fatalf("vote start snapshot mismatch\n got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestResultsSnapshotSingleWinner(t *testing.T) {
+	t.Parallel()
+
+	renderer, err := Load(filepath.Join("..", "..", "templates"))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	got, err := renderer.Results(ResultsData{
+		Theme:   "Ночь",
+		Winners: []ResultLine{{AuthorHandle: "@ada", FullName: "Ada", Likes: 5, Winner: true}},
+	})
+	if err != nil {
+		t.Fatalf("Results() error = %v", err)
+	}
+
+	want := `Итоги челленджа «Ночь».
+
+Победитель:
+
+@ada, Ada — 5 лайков
+
+Поздравляем! 🎉
+`
+	if got != want {
+		t.Fatalf("results snapshot mismatch\n got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestResultsSnapshotMultipleWinners(t *testing.T) {
+	t.Parallel()
+
+	renderer, err := Load(filepath.Join("..", "..", "templates"))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	got, err := renderer.Results(ResultsData{
+		Theme:           "Ночь",
+		MultipleWinners: true,
+		Winners: []ResultLine{
+			{AuthorHandle: "@ada", FullName: "Ada", Likes: 5, Winner: true},
+			{AuthorHandle: "@bob", FullName: "Bob", Likes: 5, Winner: true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Results() error = %v", err)
+	}
+
+	want := `Итоги челленджа «Ночь».
+
+Победители:
+
+• @ada, Ada — 5 лайков
+• @bob, Bob — 5 лайков
+
+Поздравляем! 🎉
+`
+	if got != want {
+		t.Fatalf("results snapshot mismatch\n got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestResultsSnapshotNoWinners(t *testing.T) {
+	t.Parallel()
+
+	renderer, err := Load(filepath.Join("..", "..", "templates"))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	got, err := renderer.Results(ResultsData{NoWinners: true})
+	if err != nil {
+		t.Fatalf("Results() error = %v", err)
+	}
+
+	want := "Пока нет победителя — ещё никто не проголосовал.\n"
+	if got != want {
+		t.Fatalf("results snapshot mismatch\n got:\n%q\nwant:\n%q", got, want)
 	}
 }
 

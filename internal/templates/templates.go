@@ -14,12 +14,13 @@ const (
 )
 
 type ChallengeAnnouncementData struct {
-	Num        int
-	Theme      string
-	Hashtag    string
-	StartDate  string
-	EndDate    string
-	EndWeekday string
+	Num             int
+	Theme           string
+	Hashtag         string
+	StartDate       string
+	EndDate         string
+	EndWeekday      string
+	PrevResultsLink string
 }
 
 type VoteStartData struct {

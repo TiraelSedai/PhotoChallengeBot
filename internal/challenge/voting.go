@@ -3,6 +3,7 @@ package challenge
 import (
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -35,6 +36,19 @@ func VoteLink(botUsername string, mainChatID, challengeID int64) (string, error)
 		RawQuery: "start=" + url.QueryEscape(VoteToken(mainChatID, challengeID)),
 	}
 	return link.String(), nil
+}
+
+// MessageLink builds a public-style deep link to a message in a supergroup,
+// where the chat id carries the Telegram -100 supergroup prefix.
+func MessageLink(mainChatID int64, messageID int) (string, error) {
+	if messageID <= 0 {
+		return "", fmt.Errorf("message id is required")
+	}
+	internal := strings.TrimPrefix(strconv.FormatInt(mainChatID, 10), "-100")
+	if internal == "" || strings.HasPrefix(internal, "-") {
+		return "", fmt.Errorf("main chat id %d is not a supergroup", mainChatID)
+	}
+	return fmt.Sprintf("https://t.me/c/%s/%d", internal, messageID), nil
 }
 
 func VotingEndsAt(startedAt time.Time) time.Time {

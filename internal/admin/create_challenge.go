@@ -44,6 +44,7 @@ type challengePlanner interface {
 type challengeAnnouncements interface {
 	Get(context.Context, int64) (repository.Challenge, error)
 	SetAnnouncementMessageID(context.Context, int64, int, time.Time) error
+	FindLatestWithResults(context.Context, int64) (*repository.Challenge, error)
 }
 
 type announcementRenderer interface {
@@ -260,7 +261,12 @@ func (h *CreateChallengeHandler) acceptDates(ctx context.Context, adminUserID in
 		return sendErr
 	}
 
-	draft, err := h.renderer.ChallengeAnnouncement(announcementData(plan))
+	prevResultsLink, err := h.previousResultsLink(ctx)
+	if err != nil {
+		return err
+	}
+
+	draft, err := h.renderer.ChallengeAnnouncement(announcementData(plan, prevResultsLink))
 	if err != nil {
 		return err
 	}
@@ -602,15 +608,27 @@ func optionalDateString(value *time.Time) string {
 	return dateString(*value)
 }
 
-func announcementData(plan challenge.Plan) templates.ChallengeAnnouncementData {
+func announcementData(plan challenge.Plan, prevResultsLink string) templates.ChallengeAnnouncementData {
 	return templates.ChallengeAnnouncementData{
-		Num:        plan.Num,
-		Theme:      plan.Input.Theme,
-		Hashtag:    plan.Input.Hashtag,
-		StartDate:  russianDate(plan.AcceptStartAt),
-		EndDate:    russianDate(plan.AcceptUntilAt),
-		EndWeekday: russianWeekday(plan.AcceptUntilAt),
+		Num:             plan.Num,
+		Theme:           plan.Input.Theme,
+		Hashtag:         plan.Input.Hashtag,
+		StartDate:       russianDate(plan.AcceptStartAt),
+		EndDate:         russianDate(plan.AcceptUntilAt),
+		EndWeekday:      russianWeekday(plan.AcceptUntilAt),
+		PrevResultsLink: prevResultsLink,
 	}
+}
+
+func (h *CreateChallengeHandler) previousResultsLink(ctx context.Context) (string, error) {
+	prev, err := h.announcements.FindLatestWithResults(ctx, h.mainChatID)
+	if err != nil {
+		return "", err
+	}
+	if prev == nil || prev.ResultsMessageID == nil {
+		return "", nil
+	}
+	return challenge.MessageLink(prev.MainChatID, int(*prev.ResultsMessageID))
 }
 
 func russianDate(value time.Time) string {
