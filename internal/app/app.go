@@ -327,7 +327,7 @@ func (a *App) logKnownChallenges(
 		if total.userID != nil {
 			resolved, err := telegram.MemberDisplayName(ctx, a.config.MainChatID, *total.userID)
 			if err != nil {
-				a.logger.Warn("resolve winner name", "user_id", *total.userID, "error", err)
+				a.logger.Info("resolve winner name", "user_id", *total.userID, "error", err)
 				name = strconv.FormatInt(*total.userID, 10)
 			} else {
 				name = resolved

@@ -321,6 +321,11 @@ func TestLogKnownChallengesReportsWinnersAndResultsLink(t *testing.T) {
 			t.Fatalf("log output %q does not contain %q", logged, want)
 		}
 	}
+	for _, level := range []string{"level=WARN", "level=ERROR"} {
+		if strings.Contains(logged, level) {
+			t.Fatalf("startup report must stay at info, got %s in %q", level, logged)
+		}
+	}
 }
 
 func seedDueReminder(t *testing.T, databasePath string, mainChatID int64) {
