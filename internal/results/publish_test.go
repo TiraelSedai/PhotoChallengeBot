@@ -79,6 +79,18 @@ func TestPublisherPublishesPinsResultsAndSendsAchievement(t *testing.T) {
 	if stored.AchievementsSentAt == nil {
 		t.Fatalf("AchievementsSentAt = nil, want marked")
 	}
+
+	winners, err := repository.NewChallengeWinners(database).ListAll(context.Background())
+	if err != nil {
+		t.Fatalf("ListAll() winners error = %v", err)
+	}
+	recorded := winners[challengeID]
+	if len(recorded) != 1 || recorded[0].Username != "winner" {
+		t.Fatalf("recorded winners = %#v, want winner username", recorded)
+	}
+	if recorded[0].UserID == nil || *recorded[0].UserID != 11 {
+		t.Fatalf("recorded winner user id = %v, want 11", recorded[0].UserID)
+	}
 }
 
 func TestPublisherSendsRankingPhotosInBatchesOfTen(t *testing.T) {
@@ -244,6 +256,7 @@ func TestNewPublisherPanicsOnNilClock(t *testing.T) {
 		Photos:     repository.NewPhotos(database),
 		Votes:      repository.NewVotes(database),
 		Users:      repository.NewUsers(database),
+		Winners:    repository.NewChallengeWinners(database),
 		Renderer:   renderer,
 		Publisher:  newResultsPublisherDeps().mock,
 	})
@@ -331,6 +344,7 @@ func TestPublisherRecordsResultsMessageIDAfterClaimedPersistFailure(t *testing.T
 		Photos:     repository.NewPhotos(database),
 		Votes:      repository.NewVotes(database),
 		Users:      repository.NewUsers(database),
+		Winners:    repository.NewChallengeWinners(database),
 		Renderer:   renderer,
 		Publisher:  publisher.mock,
 		Now:        func() time.Time { return resultTestTime(4 * time.Hour) },
@@ -513,6 +527,7 @@ func TestPublisherRecordsAchievementMessageAfterClaimedPersistFailure(t *testing
 		Photos:     repository.NewPhotos(database),
 		Votes:      repository.NewVotes(database),
 		Users:      repository.NewUsers(database),
+		Winners:    repository.NewChallengeWinners(database),
 		Renderer:   renderer,
 		Publisher:  publisher.mock,
 		Now:        func() time.Time { return resultTestTime(4 * time.Hour) },
@@ -560,6 +575,7 @@ func TestPublisherDoesNotDuplicateAchievementAfterMarkSentFailure(t *testing.T) 
 		Photos:     repository.NewPhotos(database),
 		Votes:      repository.NewVotes(database),
 		Users:      repository.NewUsers(database),
+		Winners:    repository.NewChallengeWinners(database),
 		Renderer:   renderer,
 		Publisher:  publisher.mock,
 		Now:        func() time.Time { return resultTestTime(4 * time.Hour) },
@@ -703,6 +719,7 @@ func newResultsPublisher(t *testing.T, database *sqlx.DB, publisher *resultsPubl
 		Photos:     repository.NewPhotos(database),
 		Votes:      repository.NewVotes(database),
 		Users:      repository.NewUsers(database),
+		Winners:    repository.NewChallengeWinners(database),
 		Renderer:   renderer,
 		Publisher:  publisher.mock,
 		Now:        func() time.Time { return resultTestTime(4 * time.Hour) },

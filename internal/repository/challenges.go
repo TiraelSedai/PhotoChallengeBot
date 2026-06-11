@@ -842,6 +842,16 @@ func (r *Challenges) FindOpenByMainChatID(ctx context.Context, mainChatID int64)
 	return &challenge, nil
 }
 
+func (r *Challenges) ListAll(ctx context.Context) ([]Challenge, error) {
+	var rows []challengeRow
+	if err := r.db.SelectContext(ctx, &rows, challengeSelectSQL+`
+		ORDER BY main_chat_id ASC, num ASC
+	`); err != nil {
+		return nil, fmt.Errorf("list all challenges: %w", err)
+	}
+	return challengeRows(rows)
+}
+
 func (r *Challenges) FindLatestWithResults(ctx context.Context, mainChatID int64) (*Challenge, error) {
 	var row challengeRow
 	if err := r.db.GetContext(ctx, &row, challengeSelectSQL+`
@@ -867,7 +877,7 @@ const challengeSelectSQL = `
 		accept_until_at, reminder_at, reminder_sending_at, reminder_sent_at,
 		reminder_message_id, vote_started_at, vote_until_at, vote_sending_at,
 		finished_at, announcement_message_id, vote_message_id, vote_pinned_at,
-		results_sending_at, results_message_id, results_pinned_at, achievements_sending_at,
+		results_sending_at, results_message_id, results_chat_id, results_pinned_at, achievements_sending_at,
 		achievements_message_id, achievements_sent_at, topic_report_sending_at,
 		topic_report_sent_at,
 		created_by_user_id, created_at, updated_at
@@ -896,6 +906,7 @@ type challengeRow struct {
 	VotePinnedAt          sql.NullString `db:"vote_pinned_at"`
 	ResultsSendingAt      sql.NullString `db:"results_sending_at"`
 	ResultsMessageID      sql.NullInt64  `db:"results_message_id"`
+	ResultsChatID         sql.NullInt64  `db:"results_chat_id"`
 	ResultsPinnedAt       sql.NullString `db:"results_pinned_at"`
 	AchievementsSendingAt sql.NullString `db:"achievements_sending_at"`
 	AchievementsMessageID sql.NullInt64  `db:"achievements_message_id"`
@@ -1023,6 +1034,7 @@ func (r challengeRow) challenge() (Challenge, error) {
 		VotePinnedAt:          votePinnedAt,
 		ResultsSendingAt:      resultsSendingAt,
 		ResultsMessageID:      int64PtrFromNull(r.ResultsMessageID),
+		ResultsChatID:         int64PtrFromNull(r.ResultsChatID),
 		ResultsPinnedAt:       resultsPinnedAt,
 		AchievementsSendingAt: achievementsSendingAt,
 		AchievementsMessageID: int64PtrFromNull(r.AchievementsMessageID),

@@ -60,6 +60,7 @@ packages:
       photoStore:
       voteStore:
       userStore:
+      winnerStore:
       renderer:
       publisher:
   github.com/TiraelSedai/PhotoChallengeBot/internal/scheduler:

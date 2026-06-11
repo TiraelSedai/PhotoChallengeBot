@@ -1,16 +1,19 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/config"
 	appdb "github.com/TiraelSedai/PhotoChallengeBot/internal/db"
+	"github.com/TiraelSedai/PhotoChallengeBot/internal/repository"
 	tgbot "github.com/go-telegram/bot"
 )
 
@@ -214,6 +217,109 @@ func TestRunStartsScheduler(t *testing.T) {
 	cancel()
 	if err := <-errc; !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run() error = %v, want context.Canceled", err)
+	}
+}
+
+func TestLogKnownChallengesReportsWinnersAndResultsLink(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	database, err := appdb.Open(ctx, appdb.Options{
+		Path:          filepath.Join(t.TempDir(), "bot.sqlite"),
+		MigrationsDir: "../../migrations",
+	})
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer database.Close()
+
+	users := repository.NewUsers(database)
+	if _, err := users.Upsert(ctx, repository.User{ID: 10, FirstName: "Admin"}); err != nil {
+		t.Fatalf("upsert user: %v", err)
+	}
+	now := time.Date(2026, 6, 10, 12, 0, 0, 0, time.UTC)
+	challengeRepo := repository.NewChallenges(database)
+	seeded, err := challengeRepo.Create(ctx, repository.CreateChallengeInput{
+		MainChatID:      -1001,
+		Num:             107,
+		Theme:           "Жёлтый",
+		Hashtag:         "#жёлтый",
+		State:           repository.ChallengeStateFinished,
+		AcceptStartAt:   now.Add(-48 * time.Hour),
+		AcceptUntilAt:   now.Add(-24 * time.Hour),
+		ReminderAt:      now.Add(-30 * time.Hour),
+		CreatedByUserID: 10,
+		CreatedAt:       now,
+	})
+	if err != nil {
+		t.Fatalf("create challenge: %v", err)
+	}
+	if _, err := database.Exec(`
+		UPDATE challenges SET results_message_id = 143054, results_chat_id = -1001272818469 WHERE id = ?
+	`, seeded.ID); err != nil {
+		t.Fatalf("set results link: %v", err)
+	}
+
+	winnersRepo := repository.NewChallengeWinners(database)
+	resolvedID := int64(42)
+	unresolvedID := int64(77)
+	for _, id := range []int64{resolvedID, unresolvedID} {
+		if _, err := users.Upsert(ctx, repository.User{ID: id, FirstName: "Winner"}); err != nil {
+			t.Fatalf("upsert winner user %d: %v", id, err)
+		}
+	}
+	for _, winner := range []repository.ChallengeWinner{
+		{ChallengeID: seeded.ID, Username: "alice"},
+		{ChallengeID: seeded.ID, Username: "bob", UserID: &resolvedID},
+		{ChallengeID: seeded.ID, Username: "carol", UserID: &unresolvedID},
+	} {
+		if err := winnersRepo.Upsert(ctx, winner); err != nil {
+			t.Fatalf("upsert winner %q: %v", winner.Username, err)
+		}
+	}
+
+	runner := &MoqTelegramRunner{
+		MemberDisplayNameFunc: func(_ context.Context, chatID int64, userID int64) (string, error) {
+			if chatID != -1001 {
+				t.Fatalf("MemberDisplayName chatID = %d, want -1001", chatID)
+			}
+			if userID == resolvedID {
+				return "Bob Winner", nil
+			}
+			return "", errors.New("member not found")
+		},
+	}
+
+	var buf bytes.Buffer
+	cfg := config.Config{
+		MainChatID:   -1001,
+		AdminChatID:  -2002,
+		DatabasePath: "unused",
+		TemplatesDir: filepath.Join("..", "..", "templates"),
+		Location:     time.UTC,
+	}
+	app := New(cfg, slog.New(slog.NewTextHandler(&buf, nil)))
+	if err := app.logKnownChallenges(ctx, challengeRepo, winnersRepo, runner); err != nil {
+		t.Fatalf("logKnownChallenges() error = %v", err)
+	}
+
+	logged := buf.String()
+	for _, want := range []string{
+		"known challenge",
+		"num=107",
+		"theme=Жёлтый",
+		"results_link=https://t.me/c/1272818469/143054",
+		`winners="alice, bob, carol"`,
+		"name=alice",
+		`name="Bob Winner"`,
+		"name=77",
+		"wins=1",
+		`challenges="Жёлтый (#жёлтый)"`,
+		"count=1",
+	} {
+		if !strings.Contains(logged, want) {
+			t.Fatalf("log output %q does not contain %q", logged, want)
+		}
 	}
 }
 

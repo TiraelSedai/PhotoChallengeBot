@@ -27,6 +27,9 @@ go.work.sum
 # env file
 .env
 
+# history import data (winner usernames and telegram ids) — never commit
+*.csv
+
 # Editor/IDE
 # .idea/
 # .vscode/

@@ -28,6 +28,9 @@ var _ client = &MoqClient{}
 //			EditMessageMediaFunc: func(context1 context.Context, editMessageMediaParams *bot.EditMessageMediaParams) (*models.Message, error) {
 //				panic("mock out the EditMessageMedia method")
 //			},
+//			GetChatMemberFunc: func(context1 context.Context, getChatMemberParams *bot.GetChatMemberParams) (*models.ChatMember, error) {
+//				panic("mock out the GetChatMember method")
+//			},
 //			GetMeFunc: func(context1 context.Context) (*models.User, error) {
 //				panic("mock out the GetMe method")
 //			},
@@ -58,6 +61,9 @@ type MoqClient struct {
 
 	// EditMessageMediaFunc mocks the EditMessageMedia method.
 	EditMessageMediaFunc func(context1 context.Context, editMessageMediaParams *bot.EditMessageMediaParams) (*models.Message, error)
+
+	// GetChatMemberFunc mocks the GetChatMember method.
+	GetChatMemberFunc func(context1 context.Context, getChatMemberParams *bot.GetChatMemberParams) (*models.ChatMember, error)
 
 	// GetMeFunc mocks the GetMe method.
 	GetMeFunc func(context1 context.Context) (*models.User, error)
@@ -92,6 +98,13 @@ type MoqClient struct {
 			Context1 context.Context
 			// EditMessageMediaParams is the editMessageMediaParams argument value.
 			EditMessageMediaParams *bot.EditMessageMediaParams
+		}
+		// GetChatMember holds details about calls to the GetChatMember method.
+		GetChatMember []struct {
+			// Context1 is the context1 argument value.
+			Context1 context.Context
+			// GetChatMemberParams is the getChatMemberParams argument value.
+			GetChatMemberParams *bot.GetChatMemberParams
 		}
 		// GetMe holds details about calls to the GetMe method.
 		GetMe []struct {
@@ -134,6 +147,7 @@ type MoqClient struct {
 	}
 	lockAnswerCallbackQuery sync.RWMutex
 	lockEditMessageMedia    sync.RWMutex
+	lockGetChatMember       sync.RWMutex
 	lockGetMe               sync.RWMutex
 	lockPinChatMessage      sync.RWMutex
 	lockSendMediaGroup      sync.RWMutex
@@ -219,6 +233,46 @@ func (mock *MoqClient) EditMessageMediaCalls() []struct {
 	mock.lockEditMessageMedia.RLock()
 	calls = mock.calls.EditMessageMedia
 	mock.lockEditMessageMedia.RUnlock()
+	return calls
+}
+
+// GetChatMember calls GetChatMemberFunc.
+func (mock *MoqClient) GetChatMember(context1 context.Context, getChatMemberParams *bot.GetChatMemberParams) (*models.ChatMember, error) {
+	callInfo := struct {
+		Context1            context.Context
+		GetChatMemberParams *bot.GetChatMemberParams
+	}{
+		Context1:            context1,
+		GetChatMemberParams: getChatMemberParams,
+	}
+	mock.lockGetChatMember.Lock()
+	mock.calls.GetChatMember = append(mock.calls.GetChatMember, callInfo)
+	mock.lockGetChatMember.Unlock()
+	if mock.GetChatMemberFunc == nil {
+		var (
+			chatMember *models.ChatMember
+			err        error
+		)
+		return chatMember, err
+	}
+	return mock.GetChatMemberFunc(context1, getChatMemberParams)
+}
+
+// GetChatMemberCalls gets all the calls that were made to GetChatMember.
+// Check the length with:
+//
+//	len(mockedclient.GetChatMemberCalls())
+func (mock *MoqClient) GetChatMemberCalls() []struct {
+	Context1            context.Context
+	GetChatMemberParams *bot.GetChatMemberParams
+} {
+	var calls []struct {
+		Context1            context.Context
+		GetChatMemberParams *bot.GetChatMemberParams
+	}
+	mock.lockGetChatMember.RLock()
+	calls = mock.calls.GetChatMember
+	mock.lockGetChatMember.RUnlock()
 	return calls
 }
 

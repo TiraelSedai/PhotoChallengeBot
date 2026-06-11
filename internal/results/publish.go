@@ -58,6 +58,10 @@ type userStore interface {
 	Get(context.Context, int64) (repository.User, error)
 }
 
+type winnerStore interface {
+	Upsert(context.Context, repository.ChallengeWinner) error
+}
+
 type renderer interface {
 	Results(templates.ResultsData) (string, error)
 }
@@ -86,6 +90,7 @@ type PublisherService struct {
 	photos     photoStore
 	votes      voteStore
 	users      userStore
+	winners    winnerStore
 	renderer   renderer
 	publisher  publisher
 	now        func() time.Time
@@ -97,6 +102,7 @@ type PublishConfig struct {
 	Photos      photoStore
 	Votes       voteStore
 	Users       userStore
+	Winners     winnerStore
 	Renderer    renderer
 	Publisher   publisher
 	Now         func() time.Time
@@ -108,6 +114,7 @@ func NewPublisher(cfg PublishConfig) *PublisherService {
 	require.NotNil("results photo repository", cfg.Photos)
 	require.NotNil("results vote repository", cfg.Votes)
 	require.NotNil("results user repository", cfg.Users)
+	require.NotNil("results winner repository", cfg.Winners)
 	require.NotNil("results renderer", cfg.Renderer)
 	require.NotNil("results publisher", cfg.Publisher)
 	require.NotNil("clock", cfg.Now)
@@ -120,6 +127,7 @@ func NewPublisher(cfg PublishConfig) *PublisherService {
 		photos:     cfg.Photos,
 		votes:      cfg.Votes,
 		users:      cfg.Users,
+		winners:    cfg.Winners,
 		renderer:   cfg.Renderer,
 		publisher:  cfg.Publisher,
 		now:        cfg.Now,
@@ -226,6 +234,28 @@ func (s *PublisherService) publishOne(ctx context.Context, challenge repository.
 	}
 	if !pinned {
 		return fmt.Errorf("mark results pinned for challenge %d: claim no longer owned", challenge.ID)
+	}
+	return s.recordWinners(ctx, challenge.ID, post.works, now)
+}
+
+func (s *PublisherService) recordWinners(ctx context.Context, challengeID int64, works []resultWork, now time.Time) error {
+	for _, work := range works {
+		if !work.line.Winner {
+			continue
+		}
+		authorUserID := work.work.AuthorUserID
+		persistCtx, cancel := s.persistContext(ctx)
+		err := s.winners.Upsert(persistCtx, repository.ChallengeWinner{
+			ChallengeID: challengeID,
+			Username:    strings.TrimPrefix(work.line.AuthorHandle, "@"),
+			UserID:      &authorUserID,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		})
+		cancel()
+		if err != nil {
+			return fmt.Errorf("record winner for challenge %d: %w", challengeID, err)
+		}
 	}
 	return nil
 }

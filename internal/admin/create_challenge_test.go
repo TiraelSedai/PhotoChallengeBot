@@ -803,6 +803,38 @@ func TestRussianWeekdayUsesGenitiveCase(t *testing.T) {
 	}
 }
 
+func TestCreateChallengeDraftLinksPreviousResultsFromImportedChat(t *testing.T) {
+	t.Parallel()
+
+	database := openAdminTestDB(t)
+	defer database.Close()
+	publisher := newCreateChallengePublisherDeps(900)
+	resultsChatID := int64(-1001272818469)
+	resultsMessageID := int64(143054)
+	announcements := &MoqChallengeAnnouncements{
+		FindLatestWithResultsFunc: func(ctx context.Context, mainChatID int64) (*repository.Challenge, error) {
+			return &repository.Challenge{
+				MainChatID:       mainChatID,
+				Num:              107,
+				ResultsChatID:    &resultsChatID,
+				ResultsMessageID: &resultsMessageID,
+			}, nil
+		},
+	}
+	handler := newAdminTestHandlerWithAnnouncements(t, database, mustAdminLocation(t), publisher, announcements)
+
+	for _, text := range []string{"/challenge", "Жёлтый", "#жёлтый", "ОК"} {
+		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
+			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
+		}
+	}
+
+	draft := publisher.lastSendTo(-2002)
+	if !strings.Contains(draft.text, "https://t.me/c/1272818469/143054") {
+		t.Fatalf("draft = %q, want previous results link pointing to the imported chat", draft.text)
+	}
+}
+
 func newAdminTestHandler(t *testing.T, database *sqlx.DB, location *time.Location, publisher *createChallengePublisherDeps) *CreateChallengeHandler {
 	t.Helper()
 

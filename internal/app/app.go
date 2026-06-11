@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/admin"
@@ -28,6 +30,7 @@ import (
 
 type telegramRunner interface {
 	EnsureIdentity(context.Context) error
+	MemberDisplayName(context.Context, int64, int64) (string, error)
 	Run(context.Context) error
 	SendMarkdown(context.Context, int64, string) (int, error)
 	SendMarkdownPhoto(context.Context, int64, string, string) (int, error)
@@ -103,11 +106,16 @@ func (a *App) Run(ctx context.Context) error {
 	photos := repository.NewPhotos(database)
 	votes := repository.NewVotes(database)
 	topicSuggestions := repository.NewTopicSuggestions(database)
+	challengeWinners := repository.NewChallengeWinners(database)
+	if err := a.logKnownChallenges(runCtx, challenges, challengeWinners, telegramRunner); err != nil {
+		return err
+	}
 	resultsPublisher := results.NewPublisher(results.PublishConfig{
 		Challenges: challenges,
 		Photos:     photos,
 		Votes:      votes,
 		Users:      users,
+		Winners:    challengeWinners,
 		Renderer:   renderer,
 		Publisher:  telegramRunner,
 		Now:        now,
@@ -251,5 +259,88 @@ func (a *App) Run(ctx context.Context) error {
 	if firstErr != nil {
 		return firstErr
 	}
+	return nil
+}
+
+func (a *App) logKnownChallenges(
+	ctx context.Context,
+	challenges *repository.Challenges,
+	winners *repository.ChallengeWinners,
+	telegram telegramRunner,
+) error {
+	all, err := challenges.ListAll(ctx)
+	if err != nil {
+		return err
+	}
+	winnersByChallenge, err := winners.ListAll(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, item := range all {
+		usernames := make([]string, 0, len(winnersByChallenge[item.ID]))
+		for _, winner := range winnersByChallenge[item.ID] {
+			usernames = append(usernames, winner.Username)
+		}
+		attrs := []any{
+			"num", item.Num,
+			"theme", item.Theme,
+			"hashtag", item.Hashtag,
+			"state", item.State,
+			"accept_start_at", item.AcceptStartAt,
+			"accept_until_at", item.AcceptUntilAt,
+			"winners", strings.Join(usernames, ", "),
+		}
+		if item.ResultsMessageID != nil {
+			if link, err := challenge.MessageLink(item.ResultsChat(), int(*item.ResultsMessageID)); err == nil {
+				attrs = append(attrs, "results_link", link)
+			}
+		}
+		a.logger.Info("known challenge", attrs...)
+	}
+
+	type winnerTotal struct {
+		username string
+		userID   *int64
+		wins     []string
+	}
+	totals := make(map[string]*winnerTotal)
+	var order []string
+	for _, item := range all {
+		for _, winner := range winnersByChallenge[item.ID] {
+			key := "username:" + strings.ToLower(winner.Username)
+			if winner.UserID != nil {
+				key = fmt.Sprintf("id:%d", *winner.UserID)
+			}
+			total, ok := totals[key]
+			if !ok {
+				total = &winnerTotal{username: winner.Username, userID: winner.UserID}
+				totals[key] = total
+				order = append(order, key)
+			}
+			total.wins = append(total.wins, fmt.Sprintf("%s (%s)", item.Theme, item.Hashtag))
+		}
+	}
+	for _, key := range order {
+		total := totals[key]
+		name := total.username
+		if total.userID != nil {
+			resolved, err := telegram.MemberDisplayName(ctx, a.config.MainChatID, *total.userID)
+			if err != nil {
+				a.logger.Warn("resolve winner name", "user_id", *total.userID, "error", err)
+				name = strconv.FormatInt(*total.userID, 10)
+			} else {
+				name = resolved
+			}
+		}
+		a.logger.Info("known winner",
+			"name", name,
+			"username", total.username,
+			"wins", len(total.wins),
+			"challenges", strings.Join(total.wins, ", "),
+		)
+	}
+
+	a.logger.Info("known challenges loaded", "count", len(all))
 	return nil
 }

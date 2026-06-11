@@ -30,6 +30,9 @@ var _ telegramRunner = &MoqTelegramRunner{}
 //			EnsureIdentityFunc: func(context1 context.Context) error {
 //				panic("mock out the EnsureIdentity method")
 //			},
+//			MemberDisplayNameFunc: func(context1 context.Context, n int64, n1 int64) (string, error) {
+//				panic("mock out the MemberDisplayName method")
+//			},
 //			PinFunc: func(context1 context.Context, n int64, n1 int) error {
 //				panic("mock out the Pin method")
 //			},
@@ -72,6 +75,9 @@ type MoqTelegramRunner struct {
 
 	// EnsureIdentityFunc mocks the EnsureIdentity method.
 	EnsureIdentityFunc func(context1 context.Context) error
+
+	// MemberDisplayNameFunc mocks the MemberDisplayName method.
+	MemberDisplayNameFunc func(context1 context.Context, n int64, n1 int64) (string, error)
 
 	// PinFunc mocks the Pin method.
 	PinFunc func(context1 context.Context, n int64, n1 int) error
@@ -130,6 +136,15 @@ type MoqTelegramRunner struct {
 		EnsureIdentity []struct {
 			// Context1 is the context1 argument value.
 			Context1 context.Context
+		}
+		// MemberDisplayName holds details about calls to the MemberDisplayName method.
+		MemberDisplayName []struct {
+			// Context1 is the context1 argument value.
+			Context1 context.Context
+			// N is the n argument value.
+			N int64
+			// N1 is the n1 argument value.
+			N1 int64
 		}
 		// Pin holds details about calls to the Pin method.
 		Pin []struct {
@@ -216,6 +231,7 @@ type MoqTelegramRunner struct {
 	lockAnswerCallback         sync.RWMutex
 	lockEditPhoto              sync.RWMutex
 	lockEnsureIdentity         sync.RWMutex
+	lockMemberDisplayName      sync.RWMutex
 	lockPin                    sync.RWMutex
 	lockRun                    sync.RWMutex
 	lockSendMarkdown           sync.RWMutex
@@ -357,6 +373,50 @@ func (mock *MoqTelegramRunner) EnsureIdentityCalls() []struct {
 	mock.lockEnsureIdentity.RLock()
 	calls = mock.calls.EnsureIdentity
 	mock.lockEnsureIdentity.RUnlock()
+	return calls
+}
+
+// MemberDisplayName calls MemberDisplayNameFunc.
+func (mock *MoqTelegramRunner) MemberDisplayName(context1 context.Context, n int64, n1 int64) (string, error) {
+	callInfo := struct {
+		Context1 context.Context
+		N        int64
+		N1       int64
+	}{
+		Context1: context1,
+		N:        n,
+		N1:       n1,
+	}
+	mock.lockMemberDisplayName.Lock()
+	mock.calls.MemberDisplayName = append(mock.calls.MemberDisplayName, callInfo)
+	mock.lockMemberDisplayName.Unlock()
+	if mock.MemberDisplayNameFunc == nil {
+		var (
+			s   string
+			err error
+		)
+		return s, err
+	}
+	return mock.MemberDisplayNameFunc(context1, n, n1)
+}
+
+// MemberDisplayNameCalls gets all the calls that were made to MemberDisplayName.
+// Check the length with:
+//
+//	len(mockedtelegramRunner.MemberDisplayNameCalls())
+func (mock *MoqTelegramRunner) MemberDisplayNameCalls() []struct {
+	Context1 context.Context
+	N        int64
+	N1       int64
+} {
+	var calls []struct {
+		Context1 context.Context
+		N        int64
+		N1       int64
+	}
+	mock.lockMemberDisplayName.RLock()
+	calls = mock.calls.MemberDisplayName
+	mock.lockMemberDisplayName.RUnlock()
 	return calls
 }
 

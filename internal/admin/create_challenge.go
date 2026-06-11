@@ -628,7 +628,7 @@ func (h *CreateChallengeHandler) previousResultsLink(ctx context.Context) (strin
 	if prev == nil || prev.ResultsMessageID == nil {
 		return "", nil
 	}
-	return challenge.MessageLink(prev.MainChatID, int(*prev.ResultsMessageID))
+	return challenge.MessageLink(prev.ResultsChat(), int(*prev.ResultsMessageID))
 }
 
 func russianDate(value time.Time) string {

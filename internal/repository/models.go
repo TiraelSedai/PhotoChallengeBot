@@ -12,7 +12,7 @@ const (
 	ChallengeStateVoting   = "voting"
 	ChallengeStateFinished = "finished"
 
-	dbTimeFormat = "2006-01-02T15:04:05.000000000Z"
+	DBTimeFormat = "2006-01-02T15:04:05.000000000Z"
 )
 
 type User struct {
@@ -46,6 +46,7 @@ type Challenge struct {
 	VotePinnedAt          *time.Time
 	ResultsSendingAt      *time.Time
 	ResultsMessageID      *int64
+	ResultsChatID         *int64
 	ResultsPinnedAt       *time.Time
 	AchievementsSendingAt *time.Time
 	AchievementsMessageID *int64
@@ -55,6 +56,23 @@ type Challenge struct {
 	CreatedByUserID       int64
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
+}
+
+// ResultsChat returns the chat the results message lives in; it differs from
+// MainChatID only for challenges imported from the previous chat.
+func (c Challenge) ResultsChat() int64 {
+	if c.ResultsChatID != nil {
+		return *c.ResultsChatID
+	}
+	return c.MainChatID
+}
+
+type ChallengeWinner struct {
+	ChallengeID int64
+	Username    string
+	UserID      *int64
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 type Photo struct {
@@ -98,11 +116,11 @@ func displayName(user User) string {
 }
 
 func timeString(value time.Time) string {
-	return value.UTC().Format(dbTimeFormat)
+	return value.UTC().Format(DBTimeFormat)
 }
 
 func parseTime(value string) (time.Time, error) {
-	parsed, err := time.Parse(dbTimeFormat, value)
+	parsed, err := time.Parse(DBTimeFormat, value)
 	if err == nil {
 		return parsed, nil
 	}
