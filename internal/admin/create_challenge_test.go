@@ -25,16 +25,16 @@ func TestCreateChallengeFlowPublishesAndPinsDefaultAnnouncement(t *testing.T) {
 	publisher := newCreateChallengePublisherDeps(100)
 	handler := newAdminTestHandler(t, database, location, publisher)
 
-	for _, text := range []string{"/challenge", "Ночной город", "#night", "ОК", "ОК"} {
+	for _, text := range []string{"/challenge", "Ночной город", "#night", "нет", "ОК", "ОК"} {
 		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
 			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
 		}
 	}
 
-	if len(publisher.sent) != 6 {
-		t.Fatalf("sent messages = %d, want 6: %#v", len(publisher.sent), publisher.sent)
+	if len(publisher.sent) != 7 {
+		t.Fatalf("sent messages = %d, want 7: %#v", len(publisher.sent), publisher.sent)
 	}
-	mainAnnouncement := publisher.sent[4]
+	mainAnnouncement := publisher.sent[5]
 	if mainAnnouncement.chatID != -1001 {
 		t.Fatalf("announcement chat = %d, want main chat", mainAnnouncement.chatID)
 	}
@@ -101,7 +101,7 @@ func TestCreateChallengeFlowUsesCustomApprovedText(t *testing.T) {
 	publisher := newCreateChallengePublisherDeps(200)
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
-	for _, text := range []string{"/new", "Вода", "#water", "2026-06-01 2026-06-18"} {
+	for _, text := range []string{"/new", "Вода", "#water", "нет", "2026-06-01 2026-06-18"} {
 		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
 			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
 		}
@@ -140,6 +140,287 @@ func TestCreateChallengeFlowUsesCustomApprovedText(t *testing.T) {
 	}
 }
 
+func TestCreateChallengeFlowAsksPhotoAfterHashtag(t *testing.T) {
+	t.Parallel()
+
+	database := openAdminTestDB(t)
+	defer database.Close()
+	publisher := newCreateChallengePublisherDeps(150)
+	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
+
+	for _, text := range []string{"/challenge", "Ночь", "#night"} {
+		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
+			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
+		}
+	}
+
+	last := publisher.sent[len(publisher.sent)-1]
+	if !strings.Contains(last.text, "Пришли картинку") || !strings.Contains(last.text, "нет") || !strings.Contains(last.text, "/skip") {
+		t.Fatalf("photo prompt = %q, want picture request mentioning нет and /skip", last.text)
+	}
+	session, err := repository.NewAdminSessions(database).Get(context.Background(), -2002, 10)
+	if err != nil {
+		t.Fatalf("Get session error = %v", err)
+	}
+	if session == nil || session.Step != stepPhoto {
+		t.Fatalf("session = %#v, want photo step", session)
+	}
+}
+
+func TestCreateChallengeFlowSkipsWizardPhoto(t *testing.T) {
+	t.Parallel()
+
+	tests := []string{"нет", "НЕТ", "/skip", "/skip@PhotoChallengeBot"}
+	for _, skipText := range tests {
+		t.Run(skipText, func(t *testing.T) {
+			t.Parallel()
+
+			database := openAdminTestDB(t)
+			defer database.Close()
+			publisher := newCreateChallengePublisherDeps(160)
+			handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
+
+			for _, text := range []string{"/challenge", "Ночь", "#night", skipText} {
+				if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
+					t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
+				}
+			}
+
+			last := publisher.sent[len(publisher.sent)-1]
+			if !strings.Contains(last.text, "Пришли даты") {
+				t.Fatalf("last message = %q, want dates prompt", last.text)
+			}
+			session, err := repository.NewAdminSessions(database).Get(context.Background(), -2002, 10)
+			if err != nil {
+				t.Fatalf("Get session error = %v", err)
+			}
+			if session == nil || session.Step != stepDates {
+				t.Fatalf("session = %#v, want dates step", session)
+			}
+			if strings.Contains(session.PayloadJSON, `"photo_file_id"`) {
+				t.Fatalf("session payload = %q, want no photo saved", session.PayloadJSON)
+			}
+		})
+	}
+}
+
+func TestCreateChallengeFlowRepromptsOnNonPhotoAtPhotoStep(t *testing.T) {
+	t.Parallel()
+
+	database := openAdminTestDB(t)
+	defer database.Close()
+	publisher := newCreateChallengePublisherDeps(170)
+	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
+
+	for _, text := range []string{"/challenge", "Ночь", "#night", "вот такая тема"} {
+		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
+			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
+		}
+	}
+
+	last := publisher.sent[len(publisher.sent)-1]
+	if last.text != photoPrompt {
+		t.Fatalf("last message = %q, want repeated photo prompt", last.text)
+	}
+	session, err := repository.NewAdminSessions(database).Get(context.Background(), -2002, 10)
+	if err != nil {
+		t.Fatalf("Get session error = %v", err)
+	}
+	if session == nil || session.Step != stepPhoto {
+		t.Fatalf("session = %#v, want photo step preserved", session)
+	}
+
+	sentBefore := len(publisher.sent)
+	if err := handler.HandleAdminChatMessage(context.Background(), adminMessage("/start")); err != nil {
+		t.Fatalf("HandleAdminChatMessage(command) error = %v", err)
+	}
+	if len(publisher.sent) != sentBefore {
+		t.Fatalf("sent after command = %d, want unchanged %d", len(publisher.sent), sentBefore)
+	}
+}
+
+func TestCreateChallengeFlowPublishesPhotoAnnouncementFromWizardPhoto(t *testing.T) {
+	t.Parallel()
+
+	database := openAdminTestDB(t)
+	defer database.Close()
+	publisher := newCreateChallengePublisherDeps(180)
+	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
+
+	for _, text := range []string{"/challenge", "Ночь", "#night"} {
+		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
+			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
+		}
+	}
+	if err := handler.HandleAdminChatMessage(context.Background(), adminPhotoMessage("капшн игнорируется")); err != nil {
+		t.Fatalf("HandleAdminChatMessage(photo) error = %v", err)
+	}
+
+	last := publisher.sent[len(publisher.sent)-1]
+	if !strings.Contains(last.text, "Пришли даты") {
+		t.Fatalf("last message = %q, want dates prompt after photo", last.text)
+	}
+
+	for _, text := range []string{"ОК", "ОК"} {
+		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
+			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
+		}
+	}
+
+	mainAnnouncement := publisher.lastSendTo(-1001)
+	if mainAnnouncement.photoFileID != "photo-big" {
+		t.Fatalf("announcement photo = %q, want largest photo size", mainAnnouncement.photoFileID)
+	}
+	if !mainAnnouncement.markdown {
+		t.Fatalf("announcement = %#v, want markdown draft caption", mainAnnouncement)
+	}
+	if !strings.Contains(mainAnnouncement.text, "Ночь") || !strings.Contains(mainAnnouncement.text, "#night") {
+		t.Fatalf("announcement caption = %q, want generated draft", mainAnnouncement.text)
+	}
+	if strings.Contains(mainAnnouncement.text, "капшн игнорируется") {
+		t.Fatalf("announcement caption = %q, want photo-step caption ignored", mainAnnouncement.text)
+	}
+	if len(publisher.pins) != 1 || publisher.pins[0].messageID != mainAnnouncement.messageID {
+		t.Fatalf("pins = %#v, want photo announcement pinned", publisher.pins)
+	}
+}
+
+func TestCreateChallengeFlowSendsPhotoDraftPreviewWithSeparatePrompt(t *testing.T) {
+	t.Parallel()
+
+	database := openAdminTestDB(t)
+	defer database.Close()
+	publisher := newCreateChallengePublisherDeps(190)
+	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
+
+	for _, text := range []string{"/challenge", "Ночь", "#night"} {
+		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
+			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
+		}
+	}
+	if err := handler.HandleAdminChatMessage(context.Background(), adminPhotoMessage("")); err != nil {
+		t.Fatalf("HandleAdminChatMessage(photo) error = %v", err)
+	}
+	if err := handler.HandleAdminChatMessage(context.Background(), adminMessage("ОК")); err != nil {
+		t.Fatalf("HandleAdminChatMessage(dates) error = %v", err)
+	}
+
+	prompt := publisher.sent[len(publisher.sent)-1]
+	preview := publisher.sent[len(publisher.sent)-2]
+	if preview.chatID != -2002 || preview.photoFileID != "photo-big" || !preview.markdown {
+		t.Fatalf("draft preview = %#v, want markdown photo in admin chat", preview)
+	}
+	if strings.Contains(preview.text, approvePrompt) {
+		t.Fatalf("draft preview caption = %q, want approve prompt sent separately", preview.text)
+	}
+	if prompt.chatID != -2002 || prompt.text != approvePrompt {
+		t.Fatalf("prompt message = %#v, want separate approve prompt", prompt)
+	}
+}
+
+func TestCreateChallengeFlowOverridesAnnouncementWithPhotoCaption(t *testing.T) {
+	t.Parallel()
+
+	database := openAdminTestDB(t)
+	defer database.Close()
+	publisher := newCreateChallengePublisherDeps(210)
+	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
+
+	for _, text := range []string{"/challenge", "Вода", "#water", "нет", "ОК"} {
+		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
+			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
+		}
+	}
+	if err := handler.HandleAdminChatMessage(context.Background(), adminPhotoMessage("Свой анонс #water")); err != nil {
+		t.Fatalf("HandleAdminChatMessage(photo override) error = %v", err)
+	}
+
+	if got := publisher.countSendsTo(-1001); got != 0 {
+		t.Fatalf("main sends after photo override = %d, want 0", got)
+	}
+	prompt := publisher.sent[len(publisher.sent)-1]
+	echo := publisher.sent[len(publisher.sent)-2]
+	if echo.chatID != -2002 || echo.photoFileID != "photo-big" || echo.text != "Свой анонс #water" || echo.markdown {
+		t.Fatalf("override echo = %#v, want plain photo with caption", echo)
+	}
+	if prompt.text != approvePrompt {
+		t.Fatalf("prompt = %q, want approve prompt", prompt.text)
+	}
+
+	if err := handler.HandleAdminChatMessage(context.Background(), adminMessage("ОК")); err != nil {
+		t.Fatalf("HandleAdminChatMessage(approve) error = %v", err)
+	}
+
+	mainAnnouncement := publisher.lastSendTo(-1001)
+	if mainAnnouncement.photoFileID != "photo-big" || mainAnnouncement.text != "Свой анонс #water" || mainAnnouncement.markdown {
+		t.Fatalf("announcement = %#v, want plain photo with custom caption", mainAnnouncement)
+	}
+	if len(publisher.pins) != 1 || publisher.pins[0].messageID != mainAnnouncement.messageID {
+		t.Fatalf("pins = %#v, want photo announcement pinned", publisher.pins)
+	}
+}
+
+func TestCreateChallengeFlowTextOverrideDropsWizardPhoto(t *testing.T) {
+	t.Parallel()
+
+	database := openAdminTestDB(t)
+	defer database.Close()
+	publisher := newCreateChallengePublisherDeps(220)
+	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
+
+	for _, text := range []string{"/challenge", "Ночь", "#night"} {
+		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
+			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
+		}
+	}
+	if err := handler.HandleAdminChatMessage(context.Background(), adminPhotoMessage("")); err != nil {
+		t.Fatalf("HandleAdminChatMessage(photo) error = %v", err)
+	}
+	for _, text := range []string{"ОК", "Текстовый анонс без картинки", "ОК"} {
+		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
+			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
+		}
+	}
+
+	mainAnnouncement := publisher.lastSendTo(-1001)
+	if mainAnnouncement.photoFileID != "" {
+		t.Fatalf("announcement = %#v, want text override to drop wizard photo", mainAnnouncement)
+	}
+	if mainAnnouncement.text != "Текстовый анонс без картинки" || mainAnnouncement.markdown {
+		t.Fatalf("announcement = %#v, want plain custom text", mainAnnouncement)
+	}
+}
+
+func TestCreateChallengeFlowIgnoresPhotoOutsidePhotoSteps(t *testing.T) {
+	t.Parallel()
+
+	database := openAdminTestDB(t)
+	defer database.Close()
+	publisher := newCreateChallengePublisherDeps(230)
+	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
+
+	for _, text := range []string{"/challenge", "Ночь", "#night", "нет"} {
+		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
+			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
+		}
+	}
+	sentBefore := len(publisher.sent)
+	if err := handler.HandleAdminChatMessage(context.Background(), adminPhotoMessage("2026-06-01 2026-06-18")); err != nil {
+		t.Fatalf("HandleAdminChatMessage(photo at dates) error = %v", err)
+	}
+
+	if len(publisher.sent) != sentBefore {
+		t.Fatalf("sent after photo at dates step = %d, want unchanged %d", len(publisher.sent), sentBefore)
+	}
+	session, err := repository.NewAdminSessions(database).Get(context.Background(), -2002, 10)
+	if err != nil {
+		t.Fatalf("Get session error = %v", err)
+	}
+	if session == nil || session.Step != stepDates {
+		t.Fatalf("session = %#v, want dates step preserved", session)
+	}
+}
+
 func TestCreateChallengeFlowRestartsFromApprovalOnCreateCommand(t *testing.T) {
 	t.Parallel()
 
@@ -153,7 +434,7 @@ func TestCreateChallengeFlowRestartsFromApprovalOnCreateCommand(t *testing.T) {
 			publisher := newCreateChallengePublisherDeps(225)
 			handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
-			for _, text := range []string{"/challenge", "Вода", "#water", "ОК"} {
+			for _, text := range []string{"/challenge", "Вода", "#water", "нет", "ОК"} {
 				if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
 					t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
 				}
@@ -196,7 +477,7 @@ func TestCreateChallengeFlowCancelsFromApproval(t *testing.T) {
 			publisher := newCreateChallengePublisherDeps(240)
 			handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
-			for _, text := range []string{"/challenge", "Вода", "#water", "ОК"} {
+			for _, text := range []string{"/challenge", "Вода", "#water", "нет", "ОК"} {
 				if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
 					t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
 				}
@@ -231,7 +512,7 @@ func TestCreateChallengeFlowDoesNotUseSlashCommandAsCustomAnnouncement(t *testin
 	publisher := newCreateChallengePublisherDeps(245)
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
-	for _, text := range []string{"/challenge", "Вода", "#water", "ОК"} {
+	for _, text := range []string{"/challenge", "Вода", "#water", "нет", "ОК"} {
 		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
 			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
 		}
@@ -264,7 +545,7 @@ func TestCreateChallengeFlowShowsDefaultDatesInDatePrompt(t *testing.T) {
 	publisher := newCreateChallengePublisherDeps(250)
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
-	for _, text := range []string{"/challenge", "Еда", "#food"} {
+	for _, text := range []string{"/challenge", "Еда", "#food", "нет"} {
 		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
 			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
 		}
@@ -288,7 +569,7 @@ func TestCreateChallengeFlowUsesPromptedDefaultDatesAfterClockMoves(t *testing.T
 		return now
 	})
 
-	for _, text := range []string{"/challenge", "Еда", "#food"} {
+	for _, text := range []string{"/challenge", "Еда", "#food", "нет"} {
 		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
 			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
 		}
@@ -325,7 +606,7 @@ func TestCreateChallengeFlowRejectsBadDatesWithoutAdvancing(t *testing.T) {
 	publisher := newCreateChallengePublisherDeps(300)
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
-	for _, text := range []string{"/challenge", "Еда", "#food", "not-a-date"} {
+	for _, text := range []string{"/challenge", "Еда", "#food", "нет", "not-a-date"} {
 		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
 			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
 		}
@@ -353,7 +634,7 @@ func TestCreateChallengeFlowReportsSemanticDateErrors(t *testing.T) {
 	publisher := newCreateChallengePublisherDeps(325)
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
-	for _, text := range []string{"/challenge", "Еда", "#food", "2026-06-18 2026-06-01"} {
+	for _, text := range []string{"/challenge", "Еда", "#food", "нет", "2026-06-18 2026-06-01"} {
 		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
 			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
 		}
@@ -380,7 +661,7 @@ func TestCreateChallengeFlowIgnoresEmptyAdminMessages(t *testing.T) {
 	publisher := newCreateChallengePublisherDeps(350)
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
-	for _, text := range []string{"/challenge", "Еда", "#food"} {
+	for _, text := range []string{"/challenge", "Еда", "#food", "нет"} {
 		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
 			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
 		}
@@ -437,7 +718,7 @@ func TestCreateChallengeFlowRecoversAfterPublishFailure(t *testing.T) {
 	publisher.failSendForChat[-1001] = errors.New("telegram unavailable")
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
-	for _, text := range []string{"/challenge", "Ночь", "#night", "ОК"} {
+	for _, text := range []string{"/challenge", "Ночь", "#night", "нет", "ОК"} {
 		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
 			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
 		}
@@ -483,7 +764,7 @@ func TestCreateChallengeFlowRecoversCustomTextAfterPublishFailure(t *testing.T) 
 	publisher.failSendForChat[-1001] = errors.New("telegram unavailable")
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
-	for _, text := range []string{"/challenge", "Ночь", "#night", "ОК"} {
+	for _, text := range []string{"/challenge", "Ночь", "#night", "нет", "ОК"} {
 		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
 			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
 		}
@@ -518,7 +799,7 @@ func TestCreateChallengeFlowRecoversAfterPinFailure(t *testing.T) {
 	publisher.failPin = errors.New("pin failed")
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
-	for _, text := range []string{"/challenge", "Ночь", "#night", "ОК"} {
+	for _, text := range []string{"/challenge", "Ночь", "#night", "нет", "ОК"} {
 		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
 			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
 		}
@@ -561,7 +842,7 @@ func TestCreateChallengeFlowRecoversAfterAnnouncementMessageIDPersistFailure(t *
 	}
 	handler := newAdminTestHandlerWithAnnouncements(t, database, mustAdminLocation(t), publisher, announcements)
 
-	for _, text := range []string{"/challenge", "Ночь", "#night", "ОК"} {
+	for _, text := range []string{"/challenge", "Ночь", "#night", "нет", "ОК"} {
 		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
 			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
 		}
@@ -612,7 +893,7 @@ func TestCreateChallengeFlowRecoversAfterSessionSaveFailureAfterAnnouncementSend
 		ClearFunc: sessionRepo.Clear,
 	}
 
-	for _, text := range []string{"/challenge", "Ночь", "#night", "ОК"} {
+	for _, text := range []string{"/challenge", "Ночь", "#night", "нет", "ОК"} {
 		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
 			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
 		}
@@ -641,7 +922,7 @@ func TestCreateChallengeFlowUsesPlainTextForCustomAnnouncement(t *testing.T) {
 	publisher := newCreateChallengePublisherDeps(600)
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
-	for _, text := range []string{"/challenge@PhotoChallengeBot", "Тема", "#topic", "ОК", "custom_text_with_unmatched_underscore_", "ОК"} {
+	for _, text := range []string{"/challenge@PhotoChallengeBot", "Тема", "#topic", "нет", "ОК", "custom_text_with_unmatched_underscore_", "ОК"} {
 		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
 			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
 		}
@@ -707,7 +988,7 @@ func TestCreateChallengeFlowPersistsResolvedDefaultDates(t *testing.T) {
 	publisher := newCreateChallengePublisherDeps(800)
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
-	for _, text := range []string{"/challenge", "Ночь", "#night", "ОК"} {
+	for _, text := range []string{"/challenge", "Ночь", "#night", "нет", "ОК"} {
 		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
 			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
 		}
@@ -733,7 +1014,7 @@ func TestCreateChallengeFlowDoesNotPublishWithStalePlannedNumber(t *testing.T) {
 	publisher := newCreateChallengePublisherDeps(850)
 	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
 
-	for _, text := range []string{"/challenge", "Ночь", "#night", "ОК"} {
+	for _, text := range []string{"/challenge", "Ночь", "#night", "нет", "ОК"} {
 		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
 			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
 		}
@@ -823,7 +1104,7 @@ func TestCreateChallengeDraftLinksPreviousResultsFromImportedChat(t *testing.T) 
 	}
 	handler := newAdminTestHandlerWithAnnouncements(t, database, mustAdminLocation(t), publisher, announcements)
 
-	for _, text := range []string{"/challenge", "Жёлтый", "#жёлтый", "ОК"} {
+	for _, text := range []string{"/challenge", "Жёлтый", "#жёлтый", "нет", "ОК"} {
 		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
 			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
 		}
@@ -929,6 +1210,16 @@ func adminMessage(text string) *models.Message {
 	}
 }
 
+func adminPhotoMessage(caption string) *models.Message {
+	message := adminMessage("")
+	message.Caption = caption
+	message.Photo = []models.PhotoSize{
+		{FileID: "photo-small", FileUniqueID: "photo-small-uid"},
+		{FileID: "photo-big", FileUniqueID: "photo-big-uid"},
+	}
+	return message
+}
+
 type createChallengePublisherDeps struct {
 	mock            *MoqCreateChallengePublisher
 	nextMessageID   int
@@ -971,6 +1262,35 @@ func newCreateChallengePublisherDeps(nextMessageID int) *createChallengePublishe
 			})
 			return messageID, nil
 		},
+		SendPhotoFunc: func(_ context.Context, chatID int64, fileID string, caption string, _ *models.InlineKeyboardMarkup) (int, error) {
+			if err := deps.failSendForChat[chatID]; err != nil {
+				return 0, err
+			}
+			deps.nextMessageID++
+			messageID := deps.nextMessageID
+			deps.sent = append(deps.sent, sentMessage{
+				chatID:      chatID,
+				messageID:   messageID,
+				text:        caption,
+				photoFileID: fileID,
+			})
+			return messageID, nil
+		},
+		SendMarkdownPhotoFunc: func(_ context.Context, chatID int64, fileID string, caption string) (int, error) {
+			if err := deps.failSendForChat[chatID]; err != nil {
+				return 0, err
+			}
+			deps.nextMessageID++
+			messageID := deps.nextMessageID
+			deps.sent = append(deps.sent, sentMessage{
+				chatID:      chatID,
+				messageID:   messageID,
+				text:        caption,
+				markdown:    true,
+				photoFileID: fileID,
+			})
+			return messageID, nil
+		},
 		PinFunc: func(_ context.Context, chatID int64, messageID int) error {
 			if deps.failPin != nil {
 				return deps.failPin
@@ -1005,10 +1325,11 @@ func (p *createChallengePublisherDeps) lastSendTo(chatID int64) sentMessage {
 }
 
 type sentMessage struct {
-	chatID    int64
-	messageID int
-	text      string
-	markdown  bool
+	chatID      int64
+	messageID   int
+	text        string
+	markdown    bool
+	photoFileID string
 }
 
 type pinnedMessage struct {

@@ -7,6 +7,8 @@ package admin
 import (
 	"context"
 	"sync"
+
+	"github.com/go-telegram/bot/models"
 )
 
 // Ensure that MoqCreateChallengePublisher does implement createChallengePublisher.
@@ -25,6 +27,12 @@ var _ createChallengePublisher = &MoqCreateChallengePublisher{}
 //			SendMarkdownFunc: func(context1 context.Context, n int64, s string) (int, error) {
 //				panic("mock out the SendMarkdown method")
 //			},
+//			SendMarkdownPhotoFunc: func(context1 context.Context, n int64, s string, s1 string) (int, error) {
+//				panic("mock out the SendMarkdownPhoto method")
+//			},
+//			SendPhotoFunc: func(context1 context.Context, n int64, s string, s1 string, inlineKeyboardMarkup *models.InlineKeyboardMarkup) (int, error) {
+//				panic("mock out the SendPhoto method")
+//			},
 //			SendTextFunc: func(context1 context.Context, n int64, s string) (int, error) {
 //				panic("mock out the SendText method")
 //			},
@@ -40,6 +48,12 @@ type MoqCreateChallengePublisher struct {
 
 	// SendMarkdownFunc mocks the SendMarkdown method.
 	SendMarkdownFunc func(context1 context.Context, n int64, s string) (int, error)
+
+	// SendMarkdownPhotoFunc mocks the SendMarkdownPhoto method.
+	SendMarkdownPhotoFunc func(context1 context.Context, n int64, s string, s1 string) (int, error)
+
+	// SendPhotoFunc mocks the SendPhoto method.
+	SendPhotoFunc func(context1 context.Context, n int64, s string, s1 string, inlineKeyboardMarkup *models.InlineKeyboardMarkup) (int, error)
 
 	// SendTextFunc mocks the SendText method.
 	SendTextFunc func(context1 context.Context, n int64, s string) (int, error)
@@ -64,6 +78,30 @@ type MoqCreateChallengePublisher struct {
 			// S is the s argument value.
 			S string
 		}
+		// SendMarkdownPhoto holds details about calls to the SendMarkdownPhoto method.
+		SendMarkdownPhoto []struct {
+			// Context1 is the context1 argument value.
+			Context1 context.Context
+			// N is the n argument value.
+			N int64
+			// S is the s argument value.
+			S string
+			// S1 is the s1 argument value.
+			S1 string
+		}
+		// SendPhoto holds details about calls to the SendPhoto method.
+		SendPhoto []struct {
+			// Context1 is the context1 argument value.
+			Context1 context.Context
+			// N is the n argument value.
+			N int64
+			// S is the s argument value.
+			S string
+			// S1 is the s1 argument value.
+			S1 string
+			// InlineKeyboardMarkup is the inlineKeyboardMarkup argument value.
+			InlineKeyboardMarkup *models.InlineKeyboardMarkup
+		}
 		// SendText holds details about calls to the SendText method.
 		SendText []struct {
 			// Context1 is the context1 argument value.
@@ -74,9 +112,11 @@ type MoqCreateChallengePublisher struct {
 			S string
 		}
 	}
-	lockPin          sync.RWMutex
-	lockSendMarkdown sync.RWMutex
-	lockSendText     sync.RWMutex
+	lockPin               sync.RWMutex
+	lockSendMarkdown      sync.RWMutex
+	lockSendMarkdownPhoto sync.RWMutex
+	lockSendPhoto         sync.RWMutex
+	lockSendText          sync.RWMutex
 }
 
 // Pin calls PinFunc.
@@ -163,6 +203,106 @@ func (mock *MoqCreateChallengePublisher) SendMarkdownCalls() []struct {
 	mock.lockSendMarkdown.RLock()
 	calls = mock.calls.SendMarkdown
 	mock.lockSendMarkdown.RUnlock()
+	return calls
+}
+
+// SendMarkdownPhoto calls SendMarkdownPhotoFunc.
+func (mock *MoqCreateChallengePublisher) SendMarkdownPhoto(context1 context.Context, n int64, s string, s1 string) (int, error) {
+	callInfo := struct {
+		Context1 context.Context
+		N        int64
+		S        string
+		S1       string
+	}{
+		Context1: context1,
+		N:        n,
+		S:        s,
+		S1:       s1,
+	}
+	mock.lockSendMarkdownPhoto.Lock()
+	mock.calls.SendMarkdownPhoto = append(mock.calls.SendMarkdownPhoto, callInfo)
+	mock.lockSendMarkdownPhoto.Unlock()
+	if mock.SendMarkdownPhotoFunc == nil {
+		var (
+			n1  int
+			err error
+		)
+		return n1, err
+	}
+	return mock.SendMarkdownPhotoFunc(context1, n, s, s1)
+}
+
+// SendMarkdownPhotoCalls gets all the calls that were made to SendMarkdownPhoto.
+// Check the length with:
+//
+//	len(mockedcreateChallengePublisher.SendMarkdownPhotoCalls())
+func (mock *MoqCreateChallengePublisher) SendMarkdownPhotoCalls() []struct {
+	Context1 context.Context
+	N        int64
+	S        string
+	S1       string
+} {
+	var calls []struct {
+		Context1 context.Context
+		N        int64
+		S        string
+		S1       string
+	}
+	mock.lockSendMarkdownPhoto.RLock()
+	calls = mock.calls.SendMarkdownPhoto
+	mock.lockSendMarkdownPhoto.RUnlock()
+	return calls
+}
+
+// SendPhoto calls SendPhotoFunc.
+func (mock *MoqCreateChallengePublisher) SendPhoto(context1 context.Context, n int64, s string, s1 string, inlineKeyboardMarkup *models.InlineKeyboardMarkup) (int, error) {
+	callInfo := struct {
+		Context1             context.Context
+		N                    int64
+		S                    string
+		S1                   string
+		InlineKeyboardMarkup *models.InlineKeyboardMarkup
+	}{
+		Context1:             context1,
+		N:                    n,
+		S:                    s,
+		S1:                   s1,
+		InlineKeyboardMarkup: inlineKeyboardMarkup,
+	}
+	mock.lockSendPhoto.Lock()
+	mock.calls.SendPhoto = append(mock.calls.SendPhoto, callInfo)
+	mock.lockSendPhoto.Unlock()
+	if mock.SendPhotoFunc == nil {
+		var (
+			n1  int
+			err error
+		)
+		return n1, err
+	}
+	return mock.SendPhotoFunc(context1, n, s, s1, inlineKeyboardMarkup)
+}
+
+// SendPhotoCalls gets all the calls that were made to SendPhoto.
+// Check the length with:
+//
+//	len(mockedcreateChallengePublisher.SendPhotoCalls())
+func (mock *MoqCreateChallengePublisher) SendPhotoCalls() []struct {
+	Context1             context.Context
+	N                    int64
+	S                    string
+	S1                   string
+	InlineKeyboardMarkup *models.InlineKeyboardMarkup
+} {
+	var calls []struct {
+		Context1             context.Context
+		N                    int64
+		S                    string
+		S1                   string
+		InlineKeyboardMarkup *models.InlineKeyboardMarkup
+	}
+	mock.lockSendPhoto.RLock()
+	calls = mock.calls.SendPhoto
+	mock.lockSendPhoto.RUnlock()
 	return calls
 }
 

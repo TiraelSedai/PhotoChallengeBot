@@ -19,9 +19,11 @@ const (
 	createChallengeFlow = "create_challenge"
 	stepTheme           = "theme"
 	stepHashtag         = "hashtag"
+	stepPhoto           = "photo"
 	stepDates           = "dates"
 	stepApprove         = "approve"
-	approvePrompt       = "Для публикации пришли `ОК`; любое другое сообщение заменит текст анонса. Для отмены пришли `/cancel` или `отмена`."
+	photoPrompt         = "Пришли картинку для анонса. Если без картинки — пришли `нет` или `/skip`."
+	approvePrompt       = "Для публикации пришли `ОК`; любое другое сообщение (текст или картинка с капшном) заменит анонс. Для отмены пришли `/cancel` или `отмена`."
 )
 
 type sessionStore interface {
@@ -54,6 +56,8 @@ type announcementRenderer interface {
 type createChallengePublisher interface {
 	SendMarkdown(context.Context, int64, string) (int, error)
 	SendText(context.Context, int64, string) (int, error)
+	SendPhoto(context.Context, int64, string, string, *models.InlineKeyboardMarkup) (int, error)
+	SendMarkdownPhoto(context.Context, int64, string, string) (int, error)
 	Pin(context.Context, int64, int) error
 }
 
@@ -129,13 +133,20 @@ func (h *CreateChallengeHandler) HandleAdminChatMessage(ctx context.Context, mes
 
 	text := strings.TrimSpace(message.Text)
 	if text == "" {
+		text = strings.TrimSpace(message.Caption)
+	}
+	photoFileID := ""
+	if len(message.Photo) > 0 {
+		photoFileID = message.Photo[len(message.Photo)-1].FileID
+	}
+	if text == "" && photoFileID == "" {
 		return nil
 	}
 	if isCommandMentionedToOtherBot(text, h.currentBotUsername()) {
 		return nil
 	}
 	if session == nil {
-		if !isCreateChallengeCommand(text, h.currentBotUsername()) {
+		if photoFileID != "" || !isCreateChallengeCommand(text, h.currentBotUsername()) {
 			return nil
 		}
 		return h.start(ctx, adminUser.ID)
@@ -143,15 +154,23 @@ func (h *CreateChallengeHandler) HandleAdminChatMessage(ctx context.Context, mes
 	if session.Flow != createChallengeFlow {
 		return nil
 	}
-	if isCancelCreateChallengeCommand(text, h.currentBotUsername()) {
-		return h.cancel(ctx, adminUser.ID)
-	}
-	if isCreateChallengeCommand(text, h.currentBotUsername()) {
-		return h.start(ctx, adminUser.ID)
-	}
-	fields := strings.Fields(text)
-	if len(fields) > 0 && strings.HasPrefix(fields[0], "/") {
-		return nil
+	if photoFileID != "" {
+		if session.Step != stepPhoto && session.Step != stepApprove {
+			return nil
+		}
+	} else {
+		if isCancelCreateChallengeCommand(text, h.currentBotUsername()) {
+			return h.cancel(ctx, adminUser.ID)
+		}
+		if isCreateChallengeCommand(text, h.currentBotUsername()) {
+			return h.start(ctx, adminUser.ID)
+		}
+		fields := strings.Fields(text)
+		if len(fields) > 0 && strings.HasPrefix(fields[0], "/") {
+			if session.Step != stepPhoto || !isSkipPhotoCommand(text, h.currentBotUsername()) {
+				return nil
+			}
+		}
 	}
 
 	switch session.Step {
@@ -159,10 +178,12 @@ func (h *CreateChallengeHandler) HandleAdminChatMessage(ctx context.Context, mes
 		return h.acceptTheme(ctx, adminUser.ID, text)
 	case stepHashtag:
 		return h.acceptHashtag(ctx, adminUser.ID, session.PayloadJSON, text)
+	case stepPhoto:
+		return h.acceptPhoto(ctx, adminUser.ID, session.PayloadJSON, photoFileID, text)
 	case stepDates:
 		return h.acceptDates(ctx, adminUser.ID, session.PayloadJSON, text)
 	case stepApprove:
-		return h.approve(ctx, adminUser.ID, session.PayloadJSON, text)
+		return h.approve(ctx, adminUser.ID, session.PayloadJSON, photoFileID, text)
 	default:
 		return h.sessions.Clear(ctx, h.adminChatID, adminUser.ID)
 	}
@@ -210,6 +231,24 @@ func (h *CreateChallengeHandler) acceptHashtag(ctx context.Context, adminUserID 
 	payload.Hashtag = text
 	payload.StartDate = dateString(defaultStart)
 	payload.EndDate = dateString(defaultEnd)
+	if err := h.savePayload(ctx, adminUserID, stepPhoto, payload); err != nil {
+		return err
+	}
+	_, err = h.publisher.SendMarkdown(ctx, h.adminChatID, photoPrompt)
+	return err
+}
+
+func (h *CreateChallengeHandler) acceptPhoto(ctx context.Context, adminUserID int64, payloadJSON, photoFileID, text string) error {
+	payload, err := decodePayload(payloadJSON)
+	if err != nil {
+		return err
+	}
+	if photoFileID == "" && !isSkipPhotoCommand(text, h.currentBotUsername()) {
+		_, err := h.publisher.SendMarkdown(ctx, h.adminChatID, photoPrompt)
+		return err
+	}
+
+	payload.PhotoFileID = photoFileID
 	if err := h.savePayload(ctx, adminUserID, stepDates, payload); err != nil {
 		return err
 	}
@@ -218,8 +257,8 @@ func (h *CreateChallengeHandler) acceptHashtag(ctx context.Context, adminUserID 
 		h.adminChatID,
 		fmt.Sprintf(
 			"Пришли даты: `ОК` - с %s по %s, или `YYYY-MM-DD YYYY-MM-DD`.",
-			dateString(defaultStart),
-			dateString(defaultEnd),
+			payload.StartDate,
+			payload.EndDate,
 		),
 	)
 	return err
@@ -282,11 +321,18 @@ func (h *CreateChallengeHandler) acceptDates(ctx context.Context, adminUserID in
 		return err
 	}
 
+	if payload.PhotoFileID != "" {
+		if _, err := h.publisher.SendMarkdownPhoto(ctx, h.adminChatID, payload.PhotoFileID, draft); err != nil {
+			return err
+		}
+		_, err = h.publisher.SendMarkdown(ctx, h.adminChatID, approvePrompt)
+		return err
+	}
 	_, err = h.publisher.SendMarkdown(ctx, h.adminChatID, draft+"\n\n"+approvePrompt)
 	return err
 }
 
-func (h *CreateChallengeHandler) approve(ctx context.Context, adminUserID int64, payloadJSON, text string) error {
+func (h *CreateChallengeHandler) approve(ctx context.Context, adminUserID int64, payloadJSON, photoFileID, text string) error {
 	payload, err := decodePayload(payloadJSON)
 	if err != nil {
 		return err
@@ -314,7 +360,23 @@ func (h *CreateChallengeHandler) approve(ctx context.Context, adminUserID int64,
 	}
 
 	announcementText := strings.TrimSpace(text)
+	if photoFileID != "" {
+		payload.PhotoFileID = photoFileID
+		payload.AnnouncementText = announcementText
+		payload.AnnouncementMarkdown = false
+		payload.AnnouncementSelected = true
+		if err := h.savePayload(ctx, adminUserID, stepApprove, payload); err != nil {
+			return err
+		}
+		if _, err := h.publisher.SendPhoto(ctx, h.adminChatID, photoFileID, announcementText, nil); err != nil {
+			return err
+		}
+		_, err = h.publisher.SendMarkdown(ctx, h.adminChatID, approvePrompt)
+		return err
+	}
 	if !isOK(announcementText) {
+		// admin override replaces the whole post: plain text drops the wizard photo
+		payload.PhotoFileID = ""
 		payload.AnnouncementText = announcementText
 		payload.AnnouncementMarkdown = false
 		payload.AnnouncementSelected = true
@@ -368,6 +430,17 @@ func (h *CreateChallengeHandler) approve(ctx context.Context, adminUserID int64,
 	send := h.publisher.SendText
 	if payload.AnnouncementMarkdown {
 		send = h.publisher.SendMarkdown
+	}
+	if announcementPhoto := payload.PhotoFileID; announcementPhoto != "" {
+		if payload.AnnouncementMarkdown {
+			send = func(ctx context.Context, chatID int64, text string) (int, error) {
+				return h.publisher.SendMarkdownPhoto(ctx, chatID, announcementPhoto, text)
+			}
+		} else {
+			send = func(ctx context.Context, chatID int64, text string) (int, error) {
+				return h.publisher.SendPhoto(ctx, chatID, announcementPhoto, text, nil)
+			}
+		}
 	}
 
 	messageID := payload.AnnouncementMessageID
@@ -438,6 +511,7 @@ type createChallengePayload struct {
 	AcceptStartAt         string `json:"accept_start_at,omitempty"`
 	AcceptUntilAt         string `json:"accept_until_at,omitempty"`
 	ReminderAt            string `json:"reminder_at,omitempty"`
+	PhotoFileID           string `json:"photo_file_id,omitempty"`
 	DraftText             string `json:"draft_text,omitempty"`
 	AnnouncementSelected  bool   `json:"announcement_selected,omitempty"`
 	AnnouncementText      string `json:"announcement_text,omitempty"`
@@ -496,6 +570,26 @@ func isCancelCreateChallengeCommand(text string, botUsername string) bool {
 		}
 	}
 	return parts[0] == "/cancel"
+}
+
+func isSkipPhotoCommand(text string, botUsername string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(text))
+	if normalized == "нет" {
+		return true
+	}
+
+	fields := strings.Fields(normalized)
+	if len(fields) == 0 {
+		return false
+	}
+	parts := strings.SplitN(fields[0], "@", 2)
+	if len(parts) == 2 {
+		username := strings.TrimSpace(parts[1])
+		if username == "" || username != strings.ToLower(strings.TrimPrefix(botUsername, "@")) {
+			return false
+		}
+	}
+	return parts[0] == "/skip"
 }
 
 func isCommandMentionedToOtherBot(text string, botUsername string) bool {
