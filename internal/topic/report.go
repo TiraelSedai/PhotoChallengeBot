@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TiraelSedai/PhotoChallengeBot/internal/publish"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/repository"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/require"
 )
@@ -106,41 +107,33 @@ func (r *Reporter) PublishOne(ctx context.Context, challenge repository.Challeng
 		return nil
 	}
 
-	claimedAt := r.now()
-	claimed, err := r.challenges.ClaimTopicReport(ctx, challenge.ID, claimedAt)
-	if err != nil {
-		return err
-	}
-	if !claimed {
-		return nil
-	}
+	_, err := publish.Attempt(ctx,
+		publish.Config{PersistTimeout: r.persistFor},
+		publish.Stage{Claim: r.challenges.ClaimTopicReport, Release: r.challenges.ReleaseTopicReportClaim},
+		challenge.ID, r.now(),
+		func(ctx context.Context, l *publish.Lease) error {
+			messages, err := r.reportMessages(ctx, challenge)
+			if err != nil {
+				_ = l.Release(ctx)
+				return err
+			}
 
-	messages, err := r.reportMessages(ctx, challenge)
-	if err != nil {
-		r.releaseClaim(ctx, challenge.ID, claimedAt)
-		return err
-	}
+			for _, text := range messages {
+				sendCtx, cancel := context.WithTimeout(ctx, r.sendFor)
+				_, err = r.publisher.SendText(sendCtx, r.adminChatID, text)
+				cancel()
+				if err != nil {
+					_ = l.Release(ctx)
+					return fmt.Errorf("send topic report for challenge %d: %w", challenge.ID, err)
+				}
+			}
 
-	for _, text := range messages {
-		sendCtx, cancel := context.WithTimeout(ctx, r.sendFor)
-		_, err = r.publisher.SendText(sendCtx, r.adminChatID, text)
-		cancel()
-		if err != nil {
-			r.releaseClaim(ctx, challenge.ID, claimedAt)
-			return fmt.Errorf("send topic report for challenge %d: %w", challenge.ID, err)
-		}
-	}
-
-	persistCtx, cancel := r.persistContext(ctx)
-	sent, err := r.challenges.MarkTopicReportSent(persistCtx, challenge.ID, claimedAt, r.now())
-	cancel()
-	if err != nil {
-		return err
-	}
-	if !sent {
-		return fmt.Errorf("mark topic report sent for challenge %d: claim no longer owned", challenge.ID)
-	}
-	return nil
+			return l.Commit(ctx, fmt.Sprintf("mark topic report sent for challenge %d", challenge.ID),
+				func(pctx context.Context) (bool, error) {
+					return r.challenges.MarkTopicReportSent(pctx, challenge.ID, l.ClaimedAt, r.now())
+				})
+		})
+	return err
 }
 
 func (r *Reporter) reportMessages(ctx context.Context, challenge repository.Challenge) ([]string, error) {
@@ -179,16 +172,6 @@ func (r *Reporter) reportMessages(ctx context.Context, challenge repository.Chal
 		current += separator + line
 	}
 	return append(messages, current), nil
-}
-
-func (r *Reporter) releaseClaim(ctx context.Context, challengeID int64, claimedAt time.Time) {
-	persistCtx, cancel := r.persistContext(ctx)
-	_ = r.challenges.ReleaseTopicReportClaim(persistCtx, challengeID, claimedAt)
-	cancel()
-}
-
-func (r *Reporter) persistContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.WithoutCancel(ctx), r.persistFor)
 }
 
 func topicReportHeader(challenge repository.Challenge) string {

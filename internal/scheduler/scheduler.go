@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/challenge"
+	"github.com/TiraelSedai/PhotoChallengeBot/internal/publish"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/repository"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/require"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/templates"
@@ -208,41 +209,32 @@ func (s *Scheduler) sendDueReminders(ctx context.Context, now time.Time) error {
 		if !s.owns(challenge) {
 			continue
 		}
-		claimedAt := now
-		claimed, err := s.challenges.ClaimReminder(ctx, challenge.ID, claimedAt)
+		_, err := publish.Attempt(ctx,
+			publish.Config{PersistTimeout: s.persistFor},
+			publish.Stage{Claim: s.challenges.ClaimReminder, Release: s.challenges.ReleaseReminderClaim},
+			challenge.ID, now,
+			func(ctx context.Context, l *publish.Lease) error {
+				sendCtx, cancel := context.WithTimeout(ctx, s.sendFor)
+				messageID, err := s.publisher.SendMarkdown(sendCtx, challenge.MainChatID, reminderText)
+				cancel()
+				if err != nil {
+					if releaseErr := l.Release(ctx); releaseErr != nil {
+						return fmt.Errorf("send reminder for challenge %d: %w; release claim: %v", challenge.ID, err, releaseErr)
+					}
+					return fmt.Errorf("send reminder for challenge %d: %w", challenge.ID, err)
+				}
+				if err := l.Commit(ctx, fmt.Sprintf("mark reminder sent for challenge %d", challenge.ID),
+					func(pctx context.Context) (bool, error) {
+						return s.challenges.MarkReminderSent(pctx, challenge.ID, messageID, l.ClaimedAt, now)
+					}); err != nil {
+					return err
+				}
+				s.logger.Info("sent challenge reminder", "challenge_id", challenge.ID, "main_chat_id", challenge.MainChatID)
+				return nil
+			})
 		if err != nil {
 			errs = append(errs, err)
-			continue
 		}
-		if !claimed {
-			continue
-		}
-		sendCtx, cancel := context.WithTimeout(ctx, s.sendFor)
-		messageID, err := s.publisher.SendMarkdown(sendCtx, challenge.MainChatID, reminderText)
-		cancel()
-		if err != nil {
-			persistCtx, cancel := s.persistenceContext(ctx)
-			releaseErr := s.challenges.ReleaseReminderClaim(persistCtx, challenge.ID, claimedAt)
-			cancel()
-			if releaseErr != nil {
-				errs = append(errs, fmt.Errorf("send reminder for challenge %d: %w; release claim: %v", challenge.ID, err, releaseErr))
-				continue
-			}
-			errs = append(errs, fmt.Errorf("send reminder for challenge %d: %w", challenge.ID, err))
-			continue
-		}
-		persistCtx, cancel := s.persistenceContext(ctx)
-		marked, err := s.challenges.MarkReminderSent(persistCtx, challenge.ID, messageID, claimedAt, now)
-		cancel()
-		if err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		if !marked {
-			errs = append(errs, fmt.Errorf("mark reminder sent for challenge %d: claim no longer owned", challenge.ID))
-			continue
-		}
-		s.logger.Info("sent challenge reminder", "challenge_id", challenge.ID, "main_chat_id", challenge.MainChatID)
 	}
 	return errors.Join(errs...)
 }
@@ -284,56 +276,78 @@ func (s *Scheduler) publishDueVoteStarts(ctx context.Context, now time.Time) err
 		if !s.owns(item) {
 			continue
 		}
-		claimedAt := now
-		claimed, err := s.challenges.ClaimVoteStart(ctx, item.ID, claimedAt)
+		_, err := publish.Attempt(ctx,
+			publish.Config{PersistTimeout: s.persistFor},
+			publish.Stage{Claim: s.challenges.ClaimVoteStart, Release: s.challenges.ReleaseVoteStartClaim},
+			item.ID, now,
+			func(ctx context.Context, l *publish.Lease) error {
+				var itemErrs []error
+				if item.VoteMessageID != nil {
+					s.pinVoteStart(ctx, l, item, int(*item.VoteMessageID), now, &itemErrs)
+					return errors.Join(itemErrs...)
+				}
+
+				photoCount, err := s.photos.CountByChallenge(ctx, item.ID)
+				if err != nil {
+					itemErrs = append(itemErrs, err)
+					if releaseErr := l.Release(ctx); releaseErr != nil {
+						itemErrs = append(itemErrs, releaseErr)
+					}
+					return errors.Join(itemErrs...)
+				}
+				voteLink, err := challenge.VoteLink(s.botUsername(), item.MainChatID, item.ID)
+				if err != nil {
+					itemErrs = append(itemErrs, fmt.Errorf("build vote link for challenge %d: %w", item.ID, err))
+					if releaseErr := l.Release(ctx); releaseErr != nil {
+						itemErrs = append(itemErrs, releaseErr)
+					}
+					return errors.Join(itemErrs...)
+				}
+				voteUntilAt := publishVoteUntil(item, now)
+				text, err := s.renderer.VoteStart(templates.VoteStartData{
+					Theme:       item.Theme,
+					AmountPhoto: photoCount,
+					VoteLink:    voteLink,
+					ResultsDate: challenge.VotingEndsText(voteUntilAt, s.location),
+				})
+				if err != nil {
+					itemErrs = append(itemErrs, err)
+					if releaseErr := l.Release(ctx); releaseErr != nil {
+						itemErrs = append(itemErrs, releaseErr)
+					}
+					return errors.Join(itemErrs...)
+				}
+
+				sendCtx, cancel := context.WithTimeout(ctx, s.sendFor)
+				messageID, err := s.publisher.SendMarkdown(sendCtx, item.MainChatID, text)
+				cancel()
+				if err != nil {
+					itemErrs = append(itemErrs, fmt.Errorf("send vote start for challenge %d: %w", item.ID, err))
+					if releaseErr := l.Release(ctx); releaseErr != nil {
+						itemErrs = append(itemErrs, releaseErr)
+					}
+					return errors.Join(itemErrs...)
+				}
+
+				if err := l.CommitOrRecord(ctx,
+					fmt.Sprintf("set vote message id for challenge %d", item.ID),
+					"sent vote message id",
+					func(pctx context.Context) (bool, error) {
+						return s.challenges.SetVoteMessageID(pctx, item.ID, messageID, l.ClaimedAt, now)
+					},
+					func(pctx context.Context) (bool, error) {
+						return s.challenges.RecordVoteMessageID(pctx, item.ID, messageID, now)
+					}); err != nil {
+					itemErrs = append(itemErrs, err)
+					return errors.Join(itemErrs...)
+				}
+
+				s.pinVoteStart(ctx, l, item, messageID, now, &itemErrs)
+				return errors.Join(itemErrs...)
+			})
 		if err != nil {
 			errs = append(errs, err)
-			continue
 		}
-		if !claimed {
-			continue
-		}
-
-		if item.VoteMessageID != nil {
-			s.pinVoteStart(ctx, item, int(*item.VoteMessageID), claimedAt, now, &errs)
-			continue
-		}
-
-		photoCount, err := s.photos.CountByChallenge(ctx, item.ID)
-		if err != nil {
-			errs = append(errs, err)
-			s.releaseVoteStartClaim(ctx, item.ID, claimedAt, &errs)
-			continue
-		}
-		voteLink, err := challenge.VoteLink(s.botUsername(), item.MainChatID, item.ID)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("build vote link for challenge %d: %w", item.ID, err))
-			s.releaseVoteStartClaim(ctx, item.ID, claimedAt, &errs)
-			continue
-		}
-		voteUntilAt := publishVoteUntil(item, now)
-		text, err := s.renderer.VoteStart(templates.VoteStartData{
-			Theme:       item.Theme,
-			AmountPhoto: photoCount,
-			VoteLink:    voteLink,
-			ResultsDate: challenge.VotingEndsText(voteUntilAt, s.location),
-		})
-		if err != nil {
-			errs = append(errs, err)
-			s.releaseVoteStartClaim(ctx, item.ID, claimedAt, &errs)
-			continue
-		}
-
-		messageID, marked, ok := s.ensureVoteMessage(ctx, item, text, claimedAt, now, &errs)
-		if !ok {
-			continue
-		}
-		if !marked {
-			errs = append(errs, fmt.Errorf("set vote message id for challenge %d: claim no longer owned", item.ID))
-			continue
-		}
-
-		s.pinVoteStart(ctx, item, messageID, claimedAt, now, &errs)
 	}
 	return errors.Join(errs...)
 }
@@ -342,74 +356,33 @@ func publishVoteUntil(item repository.Challenge, now time.Time) time.Time {
 	return challenge.VotingEndsAt(now)
 }
 
-func (s *Scheduler) ensureVoteWindow(ctx context.Context, item repository.Challenge, now time.Time, errs *[]error) (time.Time, bool) {
-	persistCtx, cancel := s.persistenceContext(ctx)
+func (s *Scheduler) ensureVoteWindow(ctx context.Context, item repository.Challenge, now time.Time, errs *[]error) bool {
+	persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.persistFor)
 	extended, err := s.challenges.ExtendVoteUntil(persistCtx, item.ID, now)
 	cancel()
 	if err != nil {
 		*errs = append(*errs, err)
-		return time.Time{}, false
+		return false
 	}
 	if extended == nil {
 		*errs = append(*errs, fmt.Errorf("extend vote window for challenge %d: row not changed", item.ID))
-		return time.Time{}, false
+		return false
 	}
-	return *extended, true
-}
-
-func (s *Scheduler) ensureVoteMessage(
-	ctx context.Context,
-	item repository.Challenge,
-	text string,
-	claimedAt time.Time,
-	now time.Time,
-	errs *[]error,
-) (int, bool, bool) {
-	if item.VoteMessageID != nil {
-		return int(*item.VoteMessageID), true, true
-	}
-
-	sendCtx, cancel := context.WithTimeout(ctx, s.sendFor)
-	messageID, err := s.publisher.SendMarkdown(sendCtx, item.MainChatID, text)
-	cancel()
-	if err != nil {
-		*errs = append(*errs, fmt.Errorf("send vote start for challenge %d: %w", item.ID, err))
-		s.releaseVoteStartClaim(ctx, item.ID, claimedAt, errs)
-		return 0, false, false
-	}
-
-	persistCtx, cancel := s.persistenceContext(ctx)
-	marked, err := s.challenges.SetVoteMessageID(persistCtx, item.ID, messageID, claimedAt, now)
-	cancel()
-	if err != nil {
-		persistCtx, cancel = s.persistenceContext(ctx)
-		recorded, recordErr := s.challenges.RecordVoteMessageID(persistCtx, item.ID, messageID, now)
-		cancel()
-		if recordErr != nil {
-			*errs = append(*errs, fmt.Errorf("%w; record sent vote message id: %v", err, recordErr))
-			return 0, false, false
-		}
-		if !recorded {
-			*errs = append(*errs, fmt.Errorf("%w; record sent vote message id: row not changed", err))
-			return 0, false, false
-		}
-		return messageID, true, true
-	}
-	return messageID, marked, true
+	return true
 }
 
 func (s *Scheduler) pinVoteStart(
 	ctx context.Context,
+	l *publish.Lease,
 	item repository.Challenge,
 	messageID int,
-	claimedAt time.Time,
 	now time.Time,
 	errs *[]error,
 ) {
-	if voteUntilAt, ok := s.ensureVoteWindow(ctx, item, now, errs); ok {
-		item.VoteUntilAt = &voteUntilAt
-	} else {
-		s.releaseVoteStartClaim(ctx, item.ID, claimedAt, errs)
+	if !s.ensureVoteWindow(ctx, item, now, errs) {
+		if releaseErr := l.Release(ctx); releaseErr != nil {
+			*errs = append(*errs, releaseErr)
+		}
 		return
 	}
 
@@ -418,31 +391,20 @@ func (s *Scheduler) pinVoteStart(
 	cancel()
 	if err != nil {
 		*errs = append(*errs, fmt.Errorf("pin vote start for challenge %d: %w", item.ID, err))
-		s.releaseVoteStartClaim(ctx, item.ID, claimedAt, errs)
+		if releaseErr := l.Release(ctx); releaseErr != nil {
+			*errs = append(*errs, releaseErr)
+		}
 		return
 	}
 
-	persistCtx, cancel := s.persistenceContext(ctx)
-	pinned, err := s.challenges.MarkVoteStartPinned(persistCtx, item.ID, claimedAt, now)
-	cancel()
-	if err != nil {
+	if err := l.Commit(ctx, fmt.Sprintf("mark vote start pinned for challenge %d", item.ID),
+		func(pctx context.Context) (bool, error) {
+			return s.challenges.MarkVoteStartPinned(pctx, item.ID, l.ClaimedAt, now)
+		}); err != nil {
 		*errs = append(*errs, err)
-		return
-	}
-	if !pinned {
-		*errs = append(*errs, fmt.Errorf("mark vote start pinned for challenge %d: claim no longer owned", item.ID))
 		return
 	}
 	s.logger.Info("published challenge vote start", "challenge_id", item.ID, "main_chat_id", item.MainChatID)
-}
-
-func (s *Scheduler) releaseVoteStartClaim(ctx context.Context, challengeID int64, claimedAt time.Time, errs *[]error) {
-	persistCtx, cancel := s.persistenceContext(ctx)
-	err := s.challenges.ReleaseVoteStartClaim(persistCtx, challengeID, claimedAt)
-	cancel()
-	if err != nil {
-		*errs = append(*errs, err)
-	}
 }
 
 func (s *Scheduler) closeDueVoting(ctx context.Context, now time.Time) error {
@@ -470,11 +432,4 @@ func (s *Scheduler) closeDueVoting(ctx context.Context, now time.Time) error {
 
 func (s *Scheduler) owns(challenge repository.Challenge) bool {
 	return s.mainChatID == 0 || challenge.MainChatID == s.mainChatID
-}
-
-func (s *Scheduler) persistenceContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	if ctx == nil {
-		return context.WithTimeout(context.Background(), s.persistFor)
-	}
-	return context.WithTimeout(context.WithoutCancel(ctx), s.persistFor)
 }

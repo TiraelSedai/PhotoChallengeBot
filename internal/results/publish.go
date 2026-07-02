@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/TiraelSedai/PhotoChallengeBot/internal/publish"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/repository"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/require"
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/templates"
@@ -166,76 +167,66 @@ func (s *PublisherService) publishOne(ctx context.Context, challenge repository.
 		return nil
 	}
 
-	claimedAt := now
-	claimed, err := s.challenges.ClaimResults(ctx, challenge.ID, claimedAt)
-	if err != nil {
-		return err
-	}
-	if !claimed {
-		return nil
-	}
+	_, err := publish.Attempt(ctx,
+		publish.Config{PersistTimeout: s.sendFor},
+		publish.Stage{Claim: s.challenges.ClaimResults, Release: s.challenges.ReleaseResultsClaim},
+		challenge.ID, now,
+		func(ctx context.Context, l *publish.Lease) error {
+			messageID := 0
+			post, err := s.resultPost(ctx, challenge)
+			if err != nil {
+				_ = l.Release(ctx)
+				return err
+			}
+			if challenge.ResultsMessageID != nil {
+				messageID = int(*challenge.ResultsMessageID)
+			} else {
+				sendCtx, cancel := context.WithTimeout(ctx, s.sendFor)
+				sentID, err := s.sendResultSummary(sendCtx, challenge.MainChatID, post)
+				cancel()
+				if err != nil {
+					_ = l.Release(ctx)
+					return fmt.Errorf("send results for challenge %d: %w", challenge.ID, err)
+				}
+				if err := l.CommitOrRecord(ctx,
+					fmt.Sprintf("set results message id for challenge %d", challenge.ID),
+					"sent results message id",
+					func(pctx context.Context) (bool, error) {
+						return s.challenges.SetResultsMessageID(pctx, challenge.ID, sentID, l.ClaimedAt, now)
+					},
+					func(pctx context.Context) (bool, error) {
+						return s.challenges.RecordResultsMessageID(pctx, challenge.ID, sentID, now)
+					},
+				); err != nil {
+					return err
+				}
+				messageID = sentID
+			}
 
-	messageID := 0
-	post, err := s.resultPost(ctx, challenge)
-	if err != nil {
-		s.releaseClaim(ctx, challenge.ID, claimedAt)
-		return err
-	}
-	if challenge.ResultsMessageID != nil {
-		messageID = int(*challenge.ResultsMessageID)
-	} else {
-		sendCtx, cancel := context.WithTimeout(ctx, s.sendFor)
-		sentID, err := s.sendResultSummary(sendCtx, challenge.MainChatID, post)
-		cancel()
-		if err != nil {
-			s.releaseClaim(ctx, challenge.ID, claimedAt)
-			return fmt.Errorf("send results for challenge %d: %w", challenge.ID, err)
-		}
-		persistCtx, cancel := s.persistContext(ctx)
-		marked, err := s.challenges.SetResultsMessageID(persistCtx, challenge.ID, sentID, claimedAt, now)
-		cancel()
-		if err != nil {
-			persistCtx, cancel = s.persistContext(ctx)
-			recorded, recordErr := s.challenges.RecordResultsMessageID(persistCtx, challenge.ID, sentID, now)
+			pinCtx, cancel := context.WithTimeout(ctx, s.sendFor)
+			err = s.publisher.Pin(pinCtx, challenge.MainChatID, messageID)
 			cancel()
-			if recordErr != nil {
-				return fmt.Errorf("%w; record sent results message id: %v", err, recordErr)
+			if err != nil {
+				_ = l.Release(ctx)
+				return fmt.Errorf("pin results for challenge %d: %w", challenge.ID, err)
 			}
-			if !recorded {
-				return fmt.Errorf("%w; record sent results message id: row not changed", err)
+			sendCtx, cancel := context.WithTimeout(ctx, s.sendFor)
+			err = s.sendResultRanking(sendCtx, challenge.MainChatID, post)
+			cancel()
+			if err != nil {
+				_ = l.Release(ctx)
+				return fmt.Errorf("send result ranking for challenge %d: %w", challenge.ID, err)
 			}
-			marked = true
-		}
-		if !marked {
-			return fmt.Errorf("set results message id for challenge %d: claim no longer owned", challenge.ID)
-		}
-		messageID = sentID
-	}
-
-	pinCtx, cancel := context.WithTimeout(ctx, s.sendFor)
-	err = s.publisher.Pin(pinCtx, challenge.MainChatID, messageID)
-	cancel()
-	if err != nil {
-		s.releaseClaim(ctx, challenge.ID, claimedAt)
-		return fmt.Errorf("pin results for challenge %d: %w", challenge.ID, err)
-	}
-	sendCtx, cancel := context.WithTimeout(ctx, s.sendFor)
-	err = s.sendResultRanking(sendCtx, challenge.MainChatID, post)
-	cancel()
-	if err != nil {
-		s.releaseClaim(ctx, challenge.ID, claimedAt)
-		return fmt.Errorf("send result ranking for challenge %d: %w", challenge.ID, err)
-	}
-	persistCtx, cancel := s.persistContext(ctx)
-	pinned, err := s.challenges.MarkResultsPinned(persistCtx, challenge.ID, claimedAt, now)
-	cancel()
-	if err != nil {
-		return err
-	}
-	if !pinned {
-		return fmt.Errorf("mark results pinned for challenge %d: claim no longer owned", challenge.ID)
-	}
-	return s.recordWinners(ctx, challenge.ID, post.works, now)
+			if err := l.Commit(ctx, fmt.Sprintf("mark results pinned for challenge %d", challenge.ID),
+				func(pctx context.Context) (bool, error) {
+					return s.challenges.MarkResultsPinned(pctx, challenge.ID, l.ClaimedAt, now)
+				},
+			); err != nil {
+				return err
+			}
+			return s.recordWinners(ctx, challenge.ID, post.works, now)
+		})
+	return err
 }
 
 func (s *PublisherService) recordWinners(ctx context.Context, challengeID int64, works []resultWork, now time.Time) error {
@@ -302,66 +293,82 @@ func sameOrEarlier(candidate, current repository.Challenge) bool {
 }
 
 func (s *PublisherService) publishAchievements(ctx context.Context, challenge repository.Challenge) error {
-	claimedAt := s.now()
-	claimed, err := s.challenges.ClaimAchievements(ctx, challenge.ID, claimedAt)
-	if err != nil {
-		return err
-	}
-	if !claimed {
-		return nil
-	}
-	if challenge.AchievementsMessageID != nil {
-		return s.markAchievementsSent(ctx, challenge.ID, claimedAt, s.now())
-	}
+	_, err := publish.Attempt(ctx,
+		publish.Config{PersistTimeout: s.sendFor},
+		publish.Stage{Claim: s.challenges.ClaimAchievements, Release: s.challenges.ReleaseAchievementsClaim},
+		challenge.ID, s.now(),
+		func(ctx context.Context, l *publish.Lease) error {
+			markSent := func(ctx context.Context) error {
+				return l.Commit(ctx, fmt.Sprintf("mark achievements sent for challenge %d", challenge.ID),
+					func(pctx context.Context) (bool, error) {
+						return s.challenges.MarkAchievementsSent(pctx, challenge.ID, l.ClaimedAt, s.now())
+					})
+			}
 
-	photos, votes, err := s.challengeInputs(ctx, challenge.ID)
-	if err != nil {
-		s.releaseAchievementsClaim(ctx, challenge.ID, claimedAt)
-		return err
-	}
-	result := Calculate(photos, votes)
-	if result.NoWinners {
-		return s.markAchievementsSent(ctx, challenge.ID, claimedAt, s.now())
-	}
+			if challenge.AchievementsMessageID != nil {
+				return markSent(ctx)
+			}
 
-	messages := make([]string, 0, len(result.Works))
-	for _, work := range result.Works {
-		if !work.Winner {
-			continue
-		}
-		if challenge.FinishedAt == nil {
-			s.releaseAchievementsClaim(ctx, challenge.ID, claimedAt)
-			return fmt.Errorf("publish achievement for challenge %d: finished_at is empty", challenge.ID)
-		}
-		winCount, err := s.winners.CountWinsByUserThrough(ctx, work.AuthorUserID, *challenge.FinishedAt, challenge.ID)
-		if err != nil {
-			s.releaseAchievementsClaim(ctx, challenge.ID, claimedAt)
-			return err
-		}
-		if _, ok := achievementMilestones[winCount]; !ok {
-			continue
-		}
-		user, err := s.users.Get(ctx, work.AuthorUserID)
-		if err != nil {
-			s.releaseAchievementsClaim(ctx, challenge.ID, claimedAt)
-			return err
-		}
-		messages = append(messages, fmt.Sprintf("%s выигрывает фоточеллендж в %d-й раз. Можно выдавать ачивку.", authorHandle(user), winCount))
-	}
-	if len(messages) == 0 {
-		return s.markAchievementsSent(ctx, challenge.ID, claimedAt, s.now())
-	}
-	sendCtx, cancel := context.WithTimeout(ctx, s.sendFor)
-	messageID, err := s.publisher.SendText(sendCtx, challenge.MainChatID, strings.Join(messages, "\n"))
-	cancel()
-	if err != nil {
-		s.releaseAchievementsClaim(ctx, challenge.ID, claimedAt)
-		return err
-	}
-	if err := s.rememberAchievementsMessage(ctx, challenge.ID, messageID, claimedAt, s.now()); err != nil {
-		return err
-	}
-	return s.markAchievementsSent(ctx, challenge.ID, claimedAt, s.now())
+			photos, votes, err := s.challengeInputs(ctx, challenge.ID)
+			if err != nil {
+				_ = l.Release(ctx)
+				return err
+			}
+			result := Calculate(photos, votes)
+			if result.NoWinners {
+				return markSent(ctx)
+			}
+
+			messages := make([]string, 0, len(result.Works))
+			for _, work := range result.Works {
+				if !work.Winner {
+					continue
+				}
+				if challenge.FinishedAt == nil {
+					_ = l.Release(ctx)
+					return fmt.Errorf("publish achievement for challenge %d: finished_at is empty", challenge.ID)
+				}
+				winCount, err := s.winners.CountWinsByUserThrough(ctx, work.AuthorUserID, *challenge.FinishedAt, challenge.ID)
+				if err != nil {
+					_ = l.Release(ctx)
+					return err
+				}
+				if _, ok := achievementMilestones[winCount]; !ok {
+					continue
+				}
+				user, err := s.users.Get(ctx, work.AuthorUserID)
+				if err != nil {
+					_ = l.Release(ctx)
+					return err
+				}
+				messages = append(messages, fmt.Sprintf("%s выигрывает фоточеллендж в %d-й раз. Можно выдавать ачивку.", authorHandle(user), winCount))
+			}
+			if len(messages) == 0 {
+				return markSent(ctx)
+			}
+			sendCtx, cancel := context.WithTimeout(ctx, s.sendFor)
+			messageID, err := s.publisher.SendText(sendCtx, challenge.MainChatID, strings.Join(messages, "\n"))
+			cancel()
+			if err != nil {
+				_ = l.Release(ctx)
+				return err
+			}
+			sentAt := s.now()
+			if err := l.CommitOrRecord(ctx,
+				fmt.Sprintf("set achievements message id for challenge %d", challenge.ID),
+				"sent achievements message id",
+				func(pctx context.Context) (bool, error) {
+					return s.challenges.SetAchievementsMessageID(pctx, challenge.ID, messageID, l.ClaimedAt, sentAt)
+				},
+				func(pctx context.Context) (bool, error) {
+					return s.challenges.RecordAchievementsMessageID(pctx, challenge.ID, messageID, sentAt)
+				},
+			); err != nil {
+				return err
+			}
+			return markSent(ctx)
+		})
+	return err
 }
 
 func (s *PublisherService) resultPost(ctx context.Context, challenge repository.Challenge) (resultPost, error) {
@@ -555,54 +562,6 @@ func fullName(user repository.User) string {
 		return user.DisplayName
 	}
 	return authorHandle(user)
-}
-
-func (s *PublisherService) releaseClaim(ctx context.Context, challengeID int64, claimedAt time.Time) {
-	persistCtx, cancel := s.persistContext(ctx)
-	_ = s.challenges.ReleaseResultsClaim(persistCtx, challengeID, claimedAt)
-	cancel()
-}
-
-func (s *PublisherService) markAchievementsSent(ctx context.Context, challengeID int64, claimedAt, sentAt time.Time) error {
-	persistCtx, cancel := s.persistContext(ctx)
-	marked, err := s.challenges.MarkAchievementsSent(persistCtx, challengeID, claimedAt, sentAt)
-	cancel()
-	if err != nil {
-		return err
-	}
-	if !marked {
-		return fmt.Errorf("mark achievements sent for challenge %d: claim no longer owned", challengeID)
-	}
-	return nil
-}
-
-func (s *PublisherService) rememberAchievementsMessage(ctx context.Context, challengeID int64, messageID int, claimedAt, sentAt time.Time) error {
-	persistCtx, cancel := s.persistContext(ctx)
-	marked, err := s.challenges.SetAchievementsMessageID(persistCtx, challengeID, messageID, claimedAt, sentAt)
-	cancel()
-	if err == nil {
-		if !marked {
-			return fmt.Errorf("set achievements message id for challenge %d: claim no longer owned", challengeID)
-		}
-		return nil
-	}
-
-	persistCtx, cancel = s.persistContext(ctx)
-	recorded, recordErr := s.challenges.RecordAchievementsMessageID(persistCtx, challengeID, messageID, sentAt)
-	cancel()
-	if recordErr != nil {
-		return fmt.Errorf("%w; record sent achievements message id: %v", err, recordErr)
-	}
-	if !recorded {
-		return fmt.Errorf("%w; record sent achievements message id: row not changed", err)
-	}
-	return nil
-}
-
-func (s *PublisherService) releaseAchievementsClaim(ctx context.Context, challengeID int64, claimedAt time.Time) {
-	persistCtx, cancel := s.persistContext(ctx)
-	_ = s.challenges.ReleaseAchievementsClaim(persistCtx, challengeID, claimedAt)
-	cancel()
 }
 
 func (s *PublisherService) persistContext(ctx context.Context) (context.Context, context.CancelFunc) {
