@@ -10,8 +10,7 @@ RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o /out/photochallengebot ./cmd/photochallengebot \
-	&& CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o /out/importhistory ./cmd/importhistory
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o /out/photochallengebot ./cmd/photochallengebot
 
 FROM alpine:3
 
@@ -22,7 +21,6 @@ RUN adduser -D -H -u 10001 appuser \
 WORKDIR /app
 
 COPY --from=build /out/photochallengebot /usr/local/bin/photochallengebot
-COPY --from=build /out/importhistory /usr/local/bin/importhistory
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY migrations ./migrations
 COPY templates ./templates

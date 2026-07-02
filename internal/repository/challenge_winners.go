@@ -65,11 +65,11 @@ func (r *ChallengeWinners) UpsertMany(ctx context.Context, winners []ChallengeWi
 }
 
 // CountWinsByUserThrough counts a user's finished-challenge wins from the canonical
-// challenge_winners table up to and including the given challenge. This table carries
-// imported history, so it stays correct for challenges whose photos/votes were never
-// stored — unlike recomputing wins from the votes table. Rows with a NULL user_id
-// (imported winners whose Telegram id was never resolved) are unattributable and thus
-// not counted; the importer surfaces those as unmatched usernames.
+// challenge_winners table up to and including the given challenge. This table records
+// each finished challenge's winner directly, so it stays correct even for older
+// challenges whose photos/votes were never stored — unlike recomputing wins from the
+// votes table. Rows with a NULL user_id (winners whose Telegram id was never resolved)
+// are unattributable and thus not counted.
 func (r *ChallengeWinners) CountWinsByUserThrough(ctx context.Context, userID int64, finishedAt time.Time, challengeID int64) (int, error) {
 	var count int
 	if err := r.db.GetContext(ctx, &count, `
