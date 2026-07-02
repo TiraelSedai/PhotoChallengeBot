@@ -18,7 +18,7 @@ func TestCalculateSortsByTotalVotesAndMarksTiedWinners(t *testing.T) {
 		{ChallengeID: 1, VoterUserID: 2, PhotoID: 30, Kind: repository.VoteKindSelf},
 		{ChallengeID: 1, VoterUserID: 3, PhotoID: 20, Kind: repository.VoteKindManual},
 		{ChallengeID: 1, VoterUserID: 4, PhotoID: 20, Kind: repository.VoteKindManual},
-		{ChallengeID: 1, VoterUserID: 5, PhotoID: 10, Kind: repository.VoteKindManual},
+		{ChallengeID: 1, VoterUserID: 3, PhotoID: 10, Kind: repository.VoteKindManual},
 	}
 
 	result := Calculate(photos, votes)
@@ -28,6 +28,9 @@ func TestCalculateSortsByTotalVotesAndMarksTiedWinners(t *testing.T) {
 	}
 	if !reflect.DeepEqual(result.WinnerPhotoIDs, []int64{20, 30}) {
 		t.Fatalf("WinnerPhotoIDs = %#v, want [20 30]", result.WinnerPhotoIDs)
+	}
+	if result.TotalVoters != 3 {
+		t.Fatalf("TotalVoters = %d, want 3 (unique manual voters, self votes excluded)", result.TotalVoters)
 	}
 
 	gotRows := summarize(result.Works)
@@ -60,6 +63,9 @@ func TestCalculateHasNoWinnersWithoutManualVotes(t *testing.T) {
 	if len(result.WinnerPhotoIDs) != 0 {
 		t.Fatalf("WinnerPhotoIDs = %#v, want empty", result.WinnerPhotoIDs)
 	}
+	if result.TotalVoters != 0 {
+		t.Fatalf("TotalVoters = %d, want 0", result.TotalVoters)
+	}
 
 	gotRows := summarize(result.Works)
 	wantRows := []workSummary{
@@ -84,6 +90,9 @@ func TestCalculateIgnoresVotesForAbsentPhotosAndUsesPhotoIDTieBreak(t *testing.T
 
 	result := Calculate(photos, votes)
 
+	if result.TotalVoters != 2 {
+		t.Fatalf("TotalVoters = %d, want 2 (vote for absent photo ignored)", result.TotalVoters)
+	}
 	gotRows := summarize(result.Works)
 	wantRows := []workSummary{
 		{photoID: 10, authorID: 100, manualVotes: 1, selfVotes: 0, totalVotes: 1, winner: true},

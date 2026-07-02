@@ -34,6 +34,7 @@ type ResultsData struct {
 	Theme           string
 	NoWinners       bool
 	MultipleWinners bool
+	TotalVoters     int
 	Winners         []ResultLine
 	Works           []ResultLine
 }

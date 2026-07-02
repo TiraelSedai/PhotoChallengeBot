@@ -174,14 +174,16 @@ func TestResultsSnapshotSingleWinner(t *testing.T) {
 	}
 
 	got, err := renderer.Results(ResultsData{
-		Theme:   "Ночь",
-		Winners: []ResultLine{{AuthorHandle: "@ada", FullName: "Ada", Likes: 5, Winner: true}},
+		Theme:       "Ночь",
+		TotalVoters: 7,
+		Winners:     []ResultLine{{AuthorHandle: "@ada", FullName: "Ada", Likes: 5, Winner: true}},
 	})
 	if err != nil {
 		t.Fatalf("Results() error = %v", err)
 	}
 
 	want := `Итоги челленджа «Ночь».
+Всего проголосовавших: 7
 
 Победитель:
 
@@ -205,6 +207,7 @@ func TestResultsSnapshotMultipleWinners(t *testing.T) {
 	got, err := renderer.Results(ResultsData{
 		Theme:           "Ночь",
 		MultipleWinners: true,
+		TotalVoters:     9,
 		Winners: []ResultLine{
 			{AuthorHandle: "@ada", FullName: "Ada", Likes: 5, Winner: true},
 			{AuthorHandle: "@bob", FullName: "Bob", Likes: 5, Winner: true},
@@ -215,6 +218,7 @@ func TestResultsSnapshotMultipleWinners(t *testing.T) {
 	}
 
 	want := `Итоги челленджа «Ночь».
+Всего проголосовавших: 9
 
 Победители:
 

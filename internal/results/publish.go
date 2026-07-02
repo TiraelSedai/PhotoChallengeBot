@@ -387,7 +387,7 @@ func (s *PublisherService) resultPost(ctx context.Context, challenge repository.
 	}
 	caption := text
 	if utf8.RuneCountInString(caption) > telegramPhotoCaptionLimit {
-		caption = compactResultCaption(challenge.Theme, works)
+		caption = compactResultCaption(challenge.Theme, result.TotalVoters, works)
 	}
 	return resultPost{text: text, caption: caption, works: works}, nil
 }
@@ -472,14 +472,15 @@ func resultRankingCaption(startPlace int, works []resultWork) string {
 
 // compactResultCaption mirrors results.md.tmpl but collapses the winner list to a
 // single line, for when the full caption would exceed Telegram's photo-caption limit.
-func compactResultCaption(theme string, works []resultWork) string {
+func compactResultCaption(theme string, totalVoters int, works []resultWork) string {
 	winners := make([]resultWork, 0, len(works))
 	for _, work := range works {
 		if work.line.Winner {
 			winners = append(winners, work)
 		}
 	}
-	header := fmt.Sprintf("Итоги челленджа «%s».", templates.EscapeMarkdown(shortenCaptionText(theme, 180)))
+	header := fmt.Sprintf("Итоги челленджа «%s».\nВсего проголосовавших: %d",
+		templates.EscapeMarkdown(shortenCaptionText(theme, 180)), totalVoters)
 	if len(winners) == 1 {
 		winner := winners[0].line
 		return fmt.Sprintf("%s\n\nПобедитель:\n\n%s, %s — %d лайков\n\nПоздравляем! 🎉",
@@ -541,6 +542,7 @@ func (s *PublisherService) templateData(ctx context.Context, theme string, resul
 		Theme:           theme,
 		NoWinners:       result.NoWinners,
 		MultipleWinners: len(winners) > 1,
+		TotalVoters:     result.TotalVoters,
 		Winners:         winners,
 		Works:           works,
 	}, resultWorks, nil

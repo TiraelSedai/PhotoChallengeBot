@@ -52,6 +52,9 @@ func TestPublisherPublishesPinsResultsAndSendsAchievement(t *testing.T) {
 	if !strings.Contains(publisher.photos[0].caption, "Итоги челленджа «Night»") {
 		t.Fatalf("results caption = %q, want challenge results", publisher.photos[0].caption)
 	}
+	if !strings.Contains(publisher.photos[0].caption, "Всего проголосовавших: 1\n") {
+		t.Fatalf("results caption = %q, want total voters line", publisher.photos[0].caption)
+	}
 	if len(publisher.photoGroups) != 1 || len(publisher.photoGroups[0].fileIDs) != 2 {
 		t.Fatalf("ranking groups = %#v, want one group with two photos", publisher.photoGroups)
 	}
@@ -198,6 +201,9 @@ func TestPublisherUsesCompactCaptionWhenWinnerSummaryExceedsTelegramLimit(t *tes
 	if !strings.Contains(caption, "Победителей: 11") {
 		t.Fatalf("summary caption = %q, want compact winner count", caption)
 	}
+	if !strings.Contains(caption, "Всего проголосовавших: 1\n") {
+		t.Fatalf("summary caption = %q, want total voters line in compact caption", caption)
+	}
 	if strings.Contains(caption, "winner\\_11") {
 		t.Fatalf("summary caption = %q, want compact caption instead of full winner list", caption)
 	}
@@ -226,6 +232,9 @@ func TestPublisherKeepsRankingCaptionWithinTelegramLimit(t *testing.T) {
 
 	if len(publisher.photos) != 2 {
 		t.Fatalf("photo messages = %#v, want winner summary and ranking photo", publisher.photos)
+	}
+	if !strings.Contains(publisher.photos[0].caption, "Всего проголосовавших: 1\n") {
+		t.Fatalf("compact winner caption = %q, want total voters line", publisher.photos[0].caption)
 	}
 	rankingCaption := publisher.photos[1].caption
 	if utf8.RuneCountInString(rankingCaption) > telegramPhotoCaptionLimit {

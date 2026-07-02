@@ -10,6 +10,7 @@ type Result struct {
 	Works          []Work
 	WinnerPhotoIDs []int64
 	NoWinners      bool
+	TotalVoters    int
 }
 
 type Work struct {
@@ -34,7 +35,7 @@ func Calculate(photos []repository.Photo, votes []repository.Vote) Result {
 	for idx := range works {
 		worksByPhotoID[works[idx].Photo.ID] = idx
 	}
-	hasManualVotes := false
+	manualVoters := make(map[int64]struct{})
 	for _, vote := range votes {
 		idx, ok := worksByPhotoID[vote.PhotoID]
 		if !ok {
@@ -46,7 +47,7 @@ func Calculate(photos []repository.Photo, votes []repository.Vote) Result {
 		case repository.VoteKindManual:
 			work.ManualVotes++
 			work.TotalVotes++
-			hasManualVotes = true
+			manualVoters[vote.VoterUserID] = struct{}{}
 		case repository.VoteKindSelf:
 			work.SelfVotes++
 			work.TotalVotes++
@@ -61,8 +62,9 @@ func Calculate(photos []repository.Photo, votes []repository.Vote) Result {
 	})
 
 	result := Result{
-		Works:     works,
-		NoWinners: !hasManualVotes,
+		Works:       works,
+		NoWinners:   len(manualVoters) == 0,
+		TotalVoters: len(manualVoters),
 	}
 	if result.NoWinners || len(works) == 0 {
 		return result
