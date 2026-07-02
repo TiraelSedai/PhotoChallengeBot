@@ -271,58 +271,6 @@ func (r *Votes) ListVotes(ctx context.Context, challengeID int64) ([]Vote, error
 	return votes, nil
 }
 
-func (r *Votes) CountFinishedWinsByAuthor(ctx context.Context, authorUserID int64) (int, error) {
-	return r.CountFinishedWinsByAuthorThrough(ctx, authorUserID, time.Now().UTC().AddDate(100, 0, 0), 1<<62)
-}
-
-func (r *Votes) CountFinishedWinsByAuthorThrough(ctx context.Context, authorUserID int64, finishedAt time.Time, challengeID int64) (int, error) {
-	var count int
-	if err := r.db.GetContext(ctx, &count, `
-		WITH photo_scores AS (
-			SELECT
-				challenges.id AS challenge_id,
-				photos.id AS photo_id,
-				photos.author_user_id AS author_user_id,
-				SUM(CASE WHEN votes.kind = 'manual' THEN 1 ELSE 0 END) AS manual_votes,
-				COUNT(votes.photo_id) AS total_votes
-			FROM challenges
-			JOIN photos ON photos.challenge_id = challenges.id
-			LEFT JOIN votes ON votes.challenge_id = photos.challenge_id
-				AND votes.photo_id = photos.id
-			WHERE challenges.state = 'finished'
-				AND challenges.finished_at IS NOT NULL
-				AND (
-					julianday(challenges.finished_at) < julianday(?)
-					OR (
-						julianday(challenges.finished_at) = julianday(?)
-						AND challenges.id <= ?
-					)
-				)
-			GROUP BY challenges.id, photos.id, photos.author_user_id
-		),
-		challenge_manual_votes AS (
-			SELECT challenge_id, SUM(manual_votes) AS manual_votes
-			FROM photo_scores
-			GROUP BY challenge_id
-		),
-		challenge_max_scores AS (
-			SELECT challenge_id, MAX(total_votes) AS max_votes
-			FROM photo_scores
-			GROUP BY challenge_id
-		)
-		SELECT COUNT(*)
-		FROM photo_scores
-		JOIN challenge_manual_votes USING (challenge_id)
-		JOIN challenge_max_scores USING (challenge_id)
-		WHERE photo_scores.author_user_id = ?
-			AND challenge_manual_votes.manual_votes > 0
-			AND photo_scores.total_votes = challenge_max_scores.max_votes
-	`, timeString(finishedAt), timeString(finishedAt), challengeID, authorUserID); err != nil {
-		return 0, fmt.Errorf("count finished wins by author through challenge: %w", err)
-	}
-	return count, nil
-}
-
 func (r *Votes) addVote(ctx context.Context, vote Vote) (Vote, error) {
 	if vote.CreatedAt.IsZero() {
 		vote.CreatedAt = time.Now().UTC()

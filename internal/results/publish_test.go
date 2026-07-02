@@ -390,6 +390,7 @@ func TestPublisherSendsBackloggedAchievementMilestonesInChallengeOrder(t *testin
 		`, 100+idx, resultTestTime(time.Duration(idx)*time.Hour).Format(time.RFC3339Nano), challengeID); err != nil {
 			t.Fatalf("mark results pinned %d: %v", idx, err)
 		}
+		seedResultWinners(t, database, challengeID, 11)
 	}
 
 	if err := service.PublishDueAchievements(context.Background(), -1001, 10); err != nil {
@@ -427,6 +428,7 @@ func TestPublisherSendsTiedAchievementWinnersInSingleClaimedMessage(t *testing.T
 	`, resultTestTime(time.Hour).Format(time.RFC3339Nano), challengeID); err != nil {
 		t.Fatalf("mark results pinned: %v", err)
 	}
+	seedResultWinners(t, database, challengeID, 11, 12)
 
 	if err := service.PublishDueAchievements(context.Background(), -1001, 10); err != nil {
 		t.Fatalf("PublishDueAchievements() error = %v", err)
@@ -483,6 +485,7 @@ func TestPublisherMarksAchievementsSentAfterSendCancelsParentContext(t *testing.
 	`, resultTestTime(time.Hour).Format(time.RFC3339Nano), challengeID); err != nil {
 		t.Fatalf("mark results pinned: %v", err)
 	}
+	seedResultWinners(t, database, challengeID, 11)
 	ctx, cancel := context.WithCancel(context.Background())
 	publisher := newResultsPublisherDeps()
 	publisher.afterText = cancel
@@ -490,6 +493,9 @@ func TestPublisherMarksAchievementsSentAfterSendCancelsParentContext(t *testing.
 
 	if err := service.PublishDueAchievements(ctx, -1001, 10); err != nil {
 		t.Fatalf("PublishDueAchievements() error = %v", err)
+	}
+	if len(publisher.texts) != 1 {
+		t.Fatalf("achievement texts = %#v, want the send that cancels the parent context", publisher.texts)
 	}
 	stored, err := repository.NewChallenges(database).Get(context.Background(), challengeID)
 	if err != nil {
@@ -522,6 +528,7 @@ func TestPublisherRecordsAchievementMessageAfterClaimedPersistFailure(t *testing
 	}
 	challenges := newResultsChallengeDeps(repository.NewChallenges(database))
 	challenges.failSetAchievementsMessageID = true
+	seedResultWinners(t, database, challengeID, 11)
 	service := NewPublisher(PublishConfig{
 		Challenges: challenges.mock,
 		Photos:     repository.NewPhotos(database),
@@ -570,6 +577,7 @@ func TestPublisherDoesNotDuplicateAchievementAfterMarkSentFailure(t *testing.T) 
 	}
 	challenges := newResultsChallengeDeps(repository.NewChallenges(database))
 	challenges.failMarkAchievementsSent = true
+	seedResultWinners(t, database, challengeID, 11)
 	service := NewPublisher(PublishConfig{
 		Challenges: challenges.mock,
 		Photos:     repository.NewPhotos(database),
@@ -676,6 +684,7 @@ func TestPublisherStopsAchievementsAfterFirstSendFailure(t *testing.T) {
 	`, resultTestTime(time.Hour).Format(time.RFC3339Nano), challengeID); err != nil {
 		t.Fatalf("mark results pinned: %v", err)
 	}
+	seedResultWinners(t, database, challengeID, 11, 12)
 
 	if err := service.PublishDueAchievements(context.Background(), -1001, 10); !errors.Is(err, sendErr) {
 		t.Fatalf("PublishDueAchievements() error = %v, want %v", err, sendErr)
@@ -796,6 +805,27 @@ func createResultUser(t *testing.T, database *sqlx.DB, user repository.User) {
 	user.UpdatedAt = resultTestTime(-2 * time.Hour)
 	if _, err := repository.NewUsers(database).Upsert(context.Background(), user); err != nil {
 		t.Fatalf("upsert user %d: %v", user.ID, err)
+	}
+}
+
+// seedResultWinners records winners for a challenge the way recordWinners does in
+// production, so achievement counts (which now read from challenge_winners) are correct
+// in tests that stage a pinned challenge directly instead of running the full publish path.
+func seedResultWinners(t *testing.T, database *sqlx.DB, challengeID int64, userIDs ...int64) {
+	t.Helper()
+	winners := make([]repository.ChallengeWinner, 0, len(userIDs))
+	for _, userID := range userIDs {
+		id := userID
+		winners = append(winners, repository.ChallengeWinner{
+			ChallengeID: challengeID,
+			Username:    "u" + strconv.FormatInt(userID, 10),
+			UserID:      &id,
+			CreatedAt:   resultTestTime(time.Hour),
+			UpdatedAt:   resultTestTime(time.Hour),
+		})
+	}
+	if err := repository.NewChallengeWinners(database).UpsertMany(context.Background(), winners); err != nil {
+		t.Fatalf("seed winners for challenge %d: %v", challengeID, err)
 	}
 }
 

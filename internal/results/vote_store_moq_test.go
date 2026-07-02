@@ -7,7 +7,6 @@ package results
 import (
 	"context"
 	"sync"
-	"time"
 
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/repository"
 )
@@ -22,9 +21,6 @@ var _ voteStore = &MoqVoteStore{}
 //
 //		// make and configure a mocked voteStore
 //		mockedvoteStore := &MoqVoteStore{
-//			CountFinishedWinsByAuthorThroughFunc: func(context1 context.Context, n int64, time1 time.Time, n1 int64) (int, error) {
-//				panic("mock out the CountFinishedWinsByAuthorThrough method")
-//			},
 //			ListVotesFunc: func(context1 context.Context, n int64) ([]repository.Vote, error) {
 //				panic("mock out the ListVotes method")
 //			},
@@ -35,25 +31,11 @@ var _ voteStore = &MoqVoteStore{}
 //
 //	}
 type MoqVoteStore struct {
-	// CountFinishedWinsByAuthorThroughFunc mocks the CountFinishedWinsByAuthorThrough method.
-	CountFinishedWinsByAuthorThroughFunc func(context1 context.Context, n int64, time1 time.Time, n1 int64) (int, error)
-
 	// ListVotesFunc mocks the ListVotes method.
 	ListVotesFunc func(context1 context.Context, n int64) ([]repository.Vote, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
-		// CountFinishedWinsByAuthorThrough holds details about calls to the CountFinishedWinsByAuthorThrough method.
-		CountFinishedWinsByAuthorThrough []struct {
-			// Context1 is the context1 argument value.
-			Context1 context.Context
-			// N is the n argument value.
-			N int64
-			// Time1 is the time1 argument value.
-			Time1 time.Time
-			// N1 is the n1 argument value.
-			N1 int64
-		}
 		// ListVotes holds details about calls to the ListVotes method.
 		ListVotes []struct {
 			// Context1 is the context1 argument value.
@@ -62,56 +44,7 @@ type MoqVoteStore struct {
 			N int64
 		}
 	}
-	lockCountFinishedWinsByAuthorThrough sync.RWMutex
-	lockListVotes                        sync.RWMutex
-}
-
-// CountFinishedWinsByAuthorThrough calls CountFinishedWinsByAuthorThroughFunc.
-func (mock *MoqVoteStore) CountFinishedWinsByAuthorThrough(context1 context.Context, n int64, time1 time.Time, n1 int64) (int, error) {
-	callInfo := struct {
-		Context1 context.Context
-		N        int64
-		Time1    time.Time
-		N1       int64
-	}{
-		Context1: context1,
-		N:        n,
-		Time1:    time1,
-		N1:       n1,
-	}
-	mock.lockCountFinishedWinsByAuthorThrough.Lock()
-	mock.calls.CountFinishedWinsByAuthorThrough = append(mock.calls.CountFinishedWinsByAuthorThrough, callInfo)
-	mock.lockCountFinishedWinsByAuthorThrough.Unlock()
-	if mock.CountFinishedWinsByAuthorThroughFunc == nil {
-		var (
-			n2  int
-			err error
-		)
-		return n2, err
-	}
-	return mock.CountFinishedWinsByAuthorThroughFunc(context1, n, time1, n1)
-}
-
-// CountFinishedWinsByAuthorThroughCalls gets all the calls that were made to CountFinishedWinsByAuthorThrough.
-// Check the length with:
-//
-//	len(mockedvoteStore.CountFinishedWinsByAuthorThroughCalls())
-func (mock *MoqVoteStore) CountFinishedWinsByAuthorThroughCalls() []struct {
-	Context1 context.Context
-	N        int64
-	Time1    time.Time
-	N1       int64
-} {
-	var calls []struct {
-		Context1 context.Context
-		N        int64
-		Time1    time.Time
-		N1       int64
-	}
-	mock.lockCountFinishedWinsByAuthorThrough.RLock()
-	calls = mock.calls.CountFinishedWinsByAuthorThrough
-	mock.lockCountFinishedWinsByAuthorThrough.RUnlock()
-	return calls
+	lockListVotes sync.RWMutex
 }
 
 // ListVotes calls ListVotesFunc.

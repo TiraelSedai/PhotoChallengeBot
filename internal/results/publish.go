@@ -51,7 +51,6 @@ type photoStore interface {
 
 type voteStore interface {
 	ListVotes(context.Context, int64) ([]repository.Vote, error)
-	CountFinishedWinsByAuthorThrough(context.Context, int64, time.Time, int64) (int, error)
 }
 
 type userStore interface {
@@ -59,7 +58,8 @@ type userStore interface {
 }
 
 type winnerStore interface {
-	Upsert(context.Context, repository.ChallengeWinner) error
+	UpsertMany(context.Context, []repository.ChallengeWinner) error
+	CountWinsByUserThrough(context.Context, int64, time.Time, int64) (int, error)
 }
 
 type renderer interface {
@@ -239,23 +239,24 @@ func (s *PublisherService) publishOne(ctx context.Context, challenge repository.
 }
 
 func (s *PublisherService) recordWinners(ctx context.Context, challengeID int64, works []resultWork, now time.Time) error {
+	winners := make([]repository.ChallengeWinner, 0, len(works))
 	for _, work := range works {
 		if !work.line.Winner {
 			continue
 		}
 		authorUserID := work.work.AuthorUserID
-		persistCtx, cancel := s.persistContext(ctx)
-		err := s.winners.Upsert(persistCtx, repository.ChallengeWinner{
+		winners = append(winners, repository.ChallengeWinner{
 			ChallengeID: challengeID,
 			Username:    strings.TrimPrefix(work.line.AuthorHandle, "@"),
 			UserID:      &authorUserID,
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		})
-		cancel()
-		if err != nil {
-			return fmt.Errorf("record winner for challenge %d: %w", challengeID, err)
-		}
+	}
+	persistCtx, cancel := s.persistContext(ctx)
+	defer cancel()
+	if err := s.winners.UpsertMany(persistCtx, winners); err != nil {
+		return fmt.Errorf("record winners for challenge %d: %w", challengeID, err)
 	}
 	return nil
 }
@@ -332,7 +333,7 @@ func (s *PublisherService) publishAchievements(ctx context.Context, challenge re
 			s.releaseAchievementsClaim(ctx, challenge.ID, claimedAt)
 			return fmt.Errorf("publish achievement for challenge %d: finished_at is empty", challenge.ID)
 		}
-		winCount, err := s.votes.CountFinishedWinsByAuthorThrough(ctx, work.AuthorUserID, *challenge.FinishedAt, challenge.ID)
+		winCount, err := s.winners.CountWinsByUserThrough(ctx, work.AuthorUserID, *challenge.FinishedAt, challenge.ID)
 		if err != nil {
 			s.releaseAchievementsClaim(ctx, challenge.ID, claimedAt)
 			return err

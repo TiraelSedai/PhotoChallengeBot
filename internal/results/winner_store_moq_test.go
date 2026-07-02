@@ -7,6 +7,7 @@ package results
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/TiraelSedai/PhotoChallengeBot/internal/repository"
 )
@@ -21,8 +22,11 @@ var _ winnerStore = &MoqWinnerStore{}
 //
 //		// make and configure a mocked winnerStore
 //		mockedwinnerStore := &MoqWinnerStore{
-//			UpsertFunc: func(context1 context.Context, challengeWinner repository.ChallengeWinner) error {
-//				panic("mock out the Upsert method")
+//			CountWinsByUserThroughFunc: func(context1 context.Context, n int64, time1 time.Time, n1 int64) (int, error) {
+//				panic("mock out the CountWinsByUserThrough method")
+//			},
+//			UpsertManyFunc: func(context1 context.Context, challengeWinners []repository.ChallengeWinner) error {
+//				panic("mock out the UpsertMany method")
 //			},
 //		}
 //
@@ -31,57 +35,120 @@ var _ winnerStore = &MoqWinnerStore{}
 //
 //	}
 type MoqWinnerStore struct {
-	// UpsertFunc mocks the Upsert method.
-	UpsertFunc func(context1 context.Context, challengeWinner repository.ChallengeWinner) error
+	// CountWinsByUserThroughFunc mocks the CountWinsByUserThrough method.
+	CountWinsByUserThroughFunc func(context1 context.Context, n int64, time1 time.Time, n1 int64) (int, error)
+
+	// UpsertManyFunc mocks the UpsertMany method.
+	UpsertManyFunc func(context1 context.Context, challengeWinners []repository.ChallengeWinner) error
 
 	// calls tracks calls to the methods.
 	calls struct {
-		// Upsert holds details about calls to the Upsert method.
-		Upsert []struct {
+		// CountWinsByUserThrough holds details about calls to the CountWinsByUserThrough method.
+		CountWinsByUserThrough []struct {
 			// Context1 is the context1 argument value.
 			Context1 context.Context
-			// ChallengeWinner is the challengeWinner argument value.
-			ChallengeWinner repository.ChallengeWinner
+			// N is the n argument value.
+			N int64
+			// Time1 is the time1 argument value.
+			Time1 time.Time
+			// N1 is the n1 argument value.
+			N1 int64
+		}
+		// UpsertMany holds details about calls to the UpsertMany method.
+		UpsertMany []struct {
+			// Context1 is the context1 argument value.
+			Context1 context.Context
+			// ChallengeWinners is the challengeWinners argument value.
+			ChallengeWinners []repository.ChallengeWinner
 		}
 	}
-	lockUpsert sync.RWMutex
+	lockCountWinsByUserThrough sync.RWMutex
+	lockUpsertMany             sync.RWMutex
 }
 
-// Upsert calls UpsertFunc.
-func (mock *MoqWinnerStore) Upsert(context1 context.Context, challengeWinner repository.ChallengeWinner) error {
+// CountWinsByUserThrough calls CountWinsByUserThroughFunc.
+func (mock *MoqWinnerStore) CountWinsByUserThrough(context1 context.Context, n int64, time1 time.Time, n1 int64) (int, error) {
 	callInfo := struct {
-		Context1        context.Context
-		ChallengeWinner repository.ChallengeWinner
+		Context1 context.Context
+		N        int64
+		Time1    time.Time
+		N1       int64
 	}{
-		Context1:        context1,
-		ChallengeWinner: challengeWinner,
+		Context1: context1,
+		N:        n,
+		Time1:    time1,
+		N1:       n1,
 	}
-	mock.lockUpsert.Lock()
-	mock.calls.Upsert = append(mock.calls.Upsert, callInfo)
-	mock.lockUpsert.Unlock()
-	if mock.UpsertFunc == nil {
+	mock.lockCountWinsByUserThrough.Lock()
+	mock.calls.CountWinsByUserThrough = append(mock.calls.CountWinsByUserThrough, callInfo)
+	mock.lockCountWinsByUserThrough.Unlock()
+	if mock.CountWinsByUserThroughFunc == nil {
+		var (
+			n2  int
+			err error
+		)
+		return n2, err
+	}
+	return mock.CountWinsByUserThroughFunc(context1, n, time1, n1)
+}
+
+// CountWinsByUserThroughCalls gets all the calls that were made to CountWinsByUserThrough.
+// Check the length with:
+//
+//	len(mockedwinnerStore.CountWinsByUserThroughCalls())
+func (mock *MoqWinnerStore) CountWinsByUserThroughCalls() []struct {
+	Context1 context.Context
+	N        int64
+	Time1    time.Time
+	N1       int64
+} {
+	var calls []struct {
+		Context1 context.Context
+		N        int64
+		Time1    time.Time
+		N1       int64
+	}
+	mock.lockCountWinsByUserThrough.RLock()
+	calls = mock.calls.CountWinsByUserThrough
+	mock.lockCountWinsByUserThrough.RUnlock()
+	return calls
+}
+
+// UpsertMany calls UpsertManyFunc.
+func (mock *MoqWinnerStore) UpsertMany(context1 context.Context, challengeWinners []repository.ChallengeWinner) error {
+	callInfo := struct {
+		Context1         context.Context
+		ChallengeWinners []repository.ChallengeWinner
+	}{
+		Context1:         context1,
+		ChallengeWinners: challengeWinners,
+	}
+	mock.lockUpsertMany.Lock()
+	mock.calls.UpsertMany = append(mock.calls.UpsertMany, callInfo)
+	mock.lockUpsertMany.Unlock()
+	if mock.UpsertManyFunc == nil {
 		var (
 			err error
 		)
 		return err
 	}
-	return mock.UpsertFunc(context1, challengeWinner)
+	return mock.UpsertManyFunc(context1, challengeWinners)
 }
 
-// UpsertCalls gets all the calls that were made to Upsert.
+// UpsertManyCalls gets all the calls that were made to UpsertMany.
 // Check the length with:
 //
-//	len(mockedwinnerStore.UpsertCalls())
-func (mock *MoqWinnerStore) UpsertCalls() []struct {
-	Context1        context.Context
-	ChallengeWinner repository.ChallengeWinner
+//	len(mockedwinnerStore.UpsertManyCalls())
+func (mock *MoqWinnerStore) UpsertManyCalls() []struct {
+	Context1         context.Context
+	ChallengeWinners []repository.ChallengeWinner
 } {
 	var calls []struct {
-		Context1        context.Context
-		ChallengeWinner repository.ChallengeWinner
+		Context1         context.Context
+		ChallengeWinners []repository.ChallengeWinner
 	}
-	mock.lockUpsert.RLock()
-	calls = mock.calls.Upsert
-	mock.lockUpsert.RUnlock()
+	mock.lockUpsertMany.RLock()
+	calls = mock.calls.UpsertMany
+	mock.lockUpsertMany.RUnlock()
 	return calls
 }

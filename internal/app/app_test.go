@@ -268,14 +268,12 @@ func TestLogKnownChallengesReportsWinnersAndResultsLink(t *testing.T) {
 			t.Fatalf("upsert winner user %d: %v", id, err)
 		}
 	}
-	for _, winner := range []repository.ChallengeWinner{
+	if err := winnersRepo.UpsertMany(ctx, []repository.ChallengeWinner{
 		{ChallengeID: seeded.ID, Username: "alice"},
 		{ChallengeID: seeded.ID, Username: "bob", UserID: &resolvedID},
 		{ChallengeID: seeded.ID, Username: "carol", UserID: &unresolvedID},
-	} {
-		if err := winnersRepo.Upsert(ctx, winner); err != nil {
-			t.Fatalf("upsert winner %q: %v", winner.Username, err)
-		}
+	}); err != nil {
+		t.Fatalf("upsert winners: %v", err)
 	}
 
 	runner := &MoqTelegramRunner{
