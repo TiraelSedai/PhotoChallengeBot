@@ -113,9 +113,13 @@ func TestCreateChallengeFlowUsesCustomApprovedText(t *testing.T) {
 	if got := publisher.countSendsTo(-1001); got != 0 {
 		t.Fatalf("main sends after custom text = %d, want 0", got)
 	}
-	lastAdmin := publisher.sent[len(publisher.sent)-1]
-	if lastAdmin.chatID != -2002 || lastAdmin.text != "Кастомный анонс #water\n\n"+approvePrompt {
-		t.Fatalf("custom confirmation = %#v", lastAdmin)
+	prompt := publisher.sent[len(publisher.sent)-1]
+	preview := publisher.sent[len(publisher.sent)-2]
+	if preview.chatID != -2002 || preview.text != "Кастомный анонс #water" || !preview.markdown {
+		t.Fatalf("custom preview = %#v, want markdown custom text", preview)
+	}
+	if prompt.chatID != -2002 || prompt.text != approvePrompt {
+		t.Fatalf("custom confirmation prompt = %#v", prompt)
 	}
 
 	if err := handler.HandleAdminChatMessage(context.Background(), adminMessage("ОК")); err != nil {
@@ -340,8 +344,8 @@ func TestCreateChallengeFlowOverridesAnnouncementWithPhotoCaption(t *testing.T) 
 	}
 	prompt := publisher.sent[len(publisher.sent)-1]
 	echo := publisher.sent[len(publisher.sent)-2]
-	if echo.chatID != -2002 || echo.photoFileID != "photo-big" || echo.text != "Свой анонс #water" || echo.markdown {
-		t.Fatalf("override echo = %#v, want plain photo with caption", echo)
+	if echo.chatID != -2002 || echo.photoFileID != "photo-big" || echo.text != "Свой анонс #water" || !echo.markdown {
+		t.Fatalf("override echo = %#v, want markdown photo with caption", echo)
 	}
 	if prompt.text != approvePrompt {
 		t.Fatalf("prompt = %q, want approve prompt", prompt.text)
@@ -352,8 +356,8 @@ func TestCreateChallengeFlowOverridesAnnouncementWithPhotoCaption(t *testing.T) 
 	}
 
 	mainAnnouncement := publisher.lastSendTo(-1001)
-	if mainAnnouncement.photoFileID != "photo-big" || mainAnnouncement.text != "Свой анонс #water" || mainAnnouncement.markdown {
-		t.Fatalf("announcement = %#v, want plain photo with custom caption", mainAnnouncement)
+	if mainAnnouncement.photoFileID != "photo-big" || mainAnnouncement.text != "Свой анонс #water" || !mainAnnouncement.markdown {
+		t.Fatalf("announcement = %#v, want markdown photo with custom caption", mainAnnouncement)
 	}
 	if len(publisher.pins) != 1 || publisher.pins[0].messageID != mainAnnouncement.messageID {
 		t.Fatalf("pins = %#v, want photo announcement pinned", publisher.pins)
@@ -386,8 +390,8 @@ func TestCreateChallengeFlowTextOverrideDropsWizardPhoto(t *testing.T) {
 	if mainAnnouncement.photoFileID != "" {
 		t.Fatalf("announcement = %#v, want text override to drop wizard photo", mainAnnouncement)
 	}
-	if mainAnnouncement.text != "Текстовый анонс без картинки" || mainAnnouncement.markdown {
-		t.Fatalf("announcement = %#v, want plain custom text", mainAnnouncement)
+	if mainAnnouncement.text != "Текстовый анонс без картинки" || !mainAnnouncement.markdown {
+		t.Fatalf("announcement = %#v, want markdown custom text", mainAnnouncement)
 	}
 }
 
@@ -782,8 +786,8 @@ func TestCreateChallengeFlowRecoversCustomTextAfterPublishFailure(t *testing.T) 
 	}
 
 	mainAnnouncement := publisher.lastSendTo(-1001)
-	if mainAnnouncement.markdown {
-		t.Fatalf("custom announcement retried as markdown: %#v", mainAnnouncement)
+	if !mainAnnouncement.markdown {
+		t.Fatalf("custom announcement retried without markdown: %#v", mainAnnouncement)
 	}
 	if mainAnnouncement.text != "custom_text_with_unmatched_underscore_" {
 		t.Fatalf("retried announcement = %q, want original custom text", mainAnnouncement.text)
@@ -914,7 +918,7 @@ func TestCreateChallengeFlowRecoversAfterSessionSaveFailureAfterAnnouncementSend
 	}
 }
 
-func TestCreateChallengeFlowUsesPlainTextForCustomAnnouncement(t *testing.T) {
+func TestCreateChallengeFlowUsesMarkdownForCustomAnnouncement(t *testing.T) {
 	t.Parallel()
 
 	database := openAdminTestDB(t)
@@ -929,11 +933,107 @@ func TestCreateChallengeFlowUsesPlainTextForCustomAnnouncement(t *testing.T) {
 	}
 
 	mainAnnouncement := publisher.lastSendTo(-1001)
-	if mainAnnouncement.markdown {
-		t.Fatalf("custom announcement sent as markdown: %#v", mainAnnouncement)
+	if !mainAnnouncement.markdown {
+		t.Fatalf("custom announcement sent without markdown: %#v", mainAnnouncement)
 	}
 	if mainAnnouncement.text != "custom_text_with_unmatched_underscore_" {
 		t.Fatalf("custom announcement = %q", mainAnnouncement.text)
+	}
+}
+
+func TestCreateChallengeFlowUsesMarkdownForCustomPhotoCaption(t *testing.T) {
+	t.Parallel()
+
+	database := openAdminTestDB(t)
+	defer database.Close()
+	publisher := newCreateChallengePublisherDeps(630)
+	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
+
+	for _, text := range []string{"/challenge", "Ночь", "#night", "нет", "ОК"} {
+		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
+			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
+		}
+	}
+	customAnnouncement := "Любой кастомный капшн\n\ncaption_with_markdown_*as is*"
+	if err := handler.HandleAdminChatMessage(context.Background(), adminPhotoMessage(customAnnouncement)); err != nil {
+		t.Fatalf("HandleAdminChatMessage(photo override) error = %v", err)
+	}
+	if err := handler.HandleAdminChatMessage(context.Background(), adminMessage("ОК")); err != nil {
+		t.Fatalf("HandleAdminChatMessage(approve) error = %v", err)
+	}
+
+	mainAnnouncement := publisher.lastSendTo(-1001)
+	if mainAnnouncement.photoFileID != "photo-big" || !mainAnnouncement.markdown {
+		t.Fatalf("announcement = %#v, want markdown photo announcement", mainAnnouncement)
+	}
+	if mainAnnouncement.text != customAnnouncement {
+		t.Fatalf("announcement caption = %q, want %q", mainAnnouncement.text, customAnnouncement)
+	}
+}
+
+func TestCreateChallengeFlowDoesNotPersistCustomAnnouncementWhenPreviewFails(t *testing.T) {
+	t.Parallel()
+
+	database := openAdminTestDB(t)
+	defer database.Close()
+	publisher := newCreateChallengePublisherDeps(640)
+	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
+
+	for _, text := range []string{"/challenge", "Ночь", "#night", "нет", "ОК"} {
+		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
+			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
+		}
+	}
+
+	publisher.failSendForChat[-2002] = errors.New("telegram rejected markdown")
+	if err := handler.HandleAdminChatMessage(context.Background(), adminMessage("custom_text_with_unmatched_underscore_")); err == nil {
+		t.Fatal("custom preview error = nil, want send failure")
+	}
+
+	session, err := repository.NewAdminSessions(database).Get(context.Background(), -2002, 10)
+	if err != nil {
+		t.Fatalf("Get session error = %v", err)
+	}
+	if session == nil || session.Step != stepApprove {
+		t.Fatalf("session = %#v, want approve step", session)
+	}
+	if strings.Contains(session.PayloadJSON, `"announcement_selected"`) ||
+		strings.Contains(session.PayloadJSON, `"announcement_text"`) ||
+		strings.Contains(session.PayloadJSON, "custom_text_with_unmatched_underscore_") {
+		t.Fatalf("session payload = %q, want failed custom announcement not persisted", session.PayloadJSON)
+	}
+}
+
+func TestCreateChallengeFlowDoesNotPersistCustomPhotoCaptionWhenPreviewFails(t *testing.T) {
+	t.Parallel()
+
+	database := openAdminTestDB(t)
+	defer database.Close()
+	publisher := newCreateChallengePublisherDeps(645)
+	handler := newAdminTestHandler(t, database, mustAdminLocation(t), publisher)
+
+	for _, text := range []string{"/challenge", "Ночь", "#night", "нет", "ОК"} {
+		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
+			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
+		}
+	}
+
+	publisher.failSendForChat[-2002] = errors.New("telegram rejected markdown")
+	if err := handler.HandleAdminChatMessage(context.Background(), adminPhotoMessage("custom_photo_caption_with_unmatched_underscore_")); err == nil {
+		t.Fatal("custom photo preview error = nil, want send failure")
+	}
+
+	session, err := repository.NewAdminSessions(database).Get(context.Background(), -2002, 10)
+	if err != nil {
+		t.Fatalf("Get session error = %v", err)
+	}
+	if session == nil || session.Step != stepApprove {
+		t.Fatalf("session = %#v, want approve step", session)
+	}
+	if strings.Contains(session.PayloadJSON, `"announcement_selected"`) ||
+		strings.Contains(session.PayloadJSON, `"announcement_text"`) ||
+		strings.Contains(session.PayloadJSON, "custom_photo_caption_with_unmatched_underscore_") {
+		t.Fatalf("session payload = %q, want failed custom photo caption not persisted", session.PayloadJSON)
 	}
 }
 

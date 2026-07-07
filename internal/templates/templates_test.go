@@ -78,7 +78,7 @@ func TestChallengeAnnouncementSnapshot(t *testing.T) {
 
 	got, err := renderer.Render(ChallengeAnnouncementTemplate, ChallengeAnnouncementData{
 		Num:        12,
-		Theme:      "Ночь_город *финал* [test]",
+		Theme:      "Ночь_город *финал* [test] (v2)",
 		Hashtag:    "#photo_challenge[12]",
 		StartDate:  "1 июня",
 		EndDate:    "18 июня",
@@ -88,7 +88,7 @@ func TestChallengeAnnouncementSnapshot(t *testing.T) {
 		t.Fatalf("Render() error = %v", err)
 	}
 
-	want := `Челлендж 12 — Ночь\_город \*финал\* \[test]
+	want := `*Челлендж 12 — Ночь\_город \*финал\* \[test] (v2)*
 
 Фото присылайте до 18:00 МСК четверга, 18 июня. Можно несколько, но в конкурс пойдёт только первое.
 

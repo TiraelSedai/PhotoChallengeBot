@@ -363,27 +363,29 @@ func (h *CreateChallengeHandler) approve(ctx context.Context, adminUserID int64,
 	if photoFileID != "" {
 		payload.PhotoFileID = photoFileID
 		payload.AnnouncementText = announcementText
-		payload.AnnouncementMarkdown = false
+		payload.AnnouncementMarkdown = true
 		payload.AnnouncementSelected = true
-		if err := h.savePayload(ctx, adminUserID, stepApprove, payload); err != nil {
+		if _, err := h.publisher.SendMarkdownPhoto(ctx, h.adminChatID, photoFileID, announcementText); err != nil {
 			return err
 		}
-		if _, err := h.publisher.SendPhoto(ctx, h.adminChatID, photoFileID, announcementText, nil); err != nil {
+		if err := h.savePayload(ctx, adminUserID, stepApprove, payload); err != nil {
 			return err
 		}
 		_, err = h.publisher.SendMarkdown(ctx, h.adminChatID, approvePrompt)
 		return err
 	}
 	if !isOK(announcementText) {
-		// admin override replaces the whole post: plain text drops the wizard photo
 		payload.PhotoFileID = ""
 		payload.AnnouncementText = announcementText
-		payload.AnnouncementMarkdown = false
+		payload.AnnouncementMarkdown = true
 		payload.AnnouncementSelected = true
+		if _, err := h.publisher.SendMarkdown(ctx, h.adminChatID, announcementText); err != nil {
+			return err
+		}
 		if err := h.savePayload(ctx, adminUserID, stepApprove, payload); err != nil {
 			return err
 		}
-		_, err = h.publisher.SendText(ctx, h.adminChatID, announcementText+"\n\n"+approvePrompt)
+		_, err := h.publisher.SendMarkdown(ctx, h.adminChatID, approvePrompt)
 		return err
 	}
 
