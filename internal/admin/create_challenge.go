@@ -361,6 +361,7 @@ func (h *CreateChallengeHandler) approve(ctx context.Context, adminUserID int64,
 
 	announcementText := strings.TrimSpace(text)
 	if photoFileID != "" {
+		announcementText = customAnnouncementText(announcementText, payload.DraftText)
 		payload.PhotoFileID = photoFileID
 		payload.AnnouncementText = announcementText
 		payload.AnnouncementMarkdown = true
@@ -375,6 +376,7 @@ func (h *CreateChallengeHandler) approve(ctx context.Context, adminUserID int64,
 		return err
 	}
 	if !isOK(announcementText) {
+		announcementText = customAnnouncementText(announcementText, payload.DraftText)
 		payload.PhotoFileID = ""
 		payload.AnnouncementText = announcementText
 		payload.AnnouncementMarkdown = true
@@ -528,6 +530,27 @@ func decodePayload(payloadJSON string) (createChallengePayload, error) {
 		return createChallengePayload{}, fmt.Errorf("decode create challenge payload: %w", err)
 	}
 	return payload, nil
+}
+
+func customAnnouncementText(text string, draft string) string {
+	previousResultsLine := previousResultsLine(draft)
+	if previousResultsLine == "" || strings.Contains(text, previousResultsLine) {
+		return text
+	}
+	if text == "" {
+		return previousResultsLine
+	}
+	return text + "\n\n" + previousResultsLine
+}
+
+func previousResultsLine(draft string) string {
+	for _, line := range strings.Split(draft, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.Contains(line, "Результаты прошлого челленджа") {
+			return line
+		}
+	}
+	return ""
 }
 
 func telegramUser(user models.User) repository.User {

@@ -971,6 +971,108 @@ func TestCreateChallengeFlowUsesMarkdownForCustomPhotoCaption(t *testing.T) {
 	}
 }
 
+func TestCreateChallengeFlowAddsPreviousResultsToCustomAnnouncement(t *testing.T) {
+	t.Parallel()
+
+	database := openAdminTestDB(t)
+	defer database.Close()
+	publisher := newCreateChallengePublisherDeps(635)
+	challengeRepo := repository.NewChallenges(database)
+	resultsChatID := int64(-1001272818469)
+	resultsMessageID := int64(144934)
+	announcements := &MoqChallengeAnnouncements{
+		GetFunc:                      challengeRepo.Get,
+		SetAnnouncementMessageIDFunc: challengeRepo.SetAnnouncementMessageID,
+		FindLatestWithResultsFunc: func(ctx context.Context, mainChatID int64) (*repository.Challenge, error) {
+			return &repository.Challenge{
+				MainChatID:       mainChatID,
+				Num:              108,
+				ResultsChatID:    &resultsChatID,
+				ResultsMessageID: &resultsMessageID,
+			}, nil
+		},
+	}
+	handler := newAdminTestHandlerWithAnnouncements(t, database, mustAdminLocation(t), publisher, announcements)
+
+	for _, text := range []string{"/challenge", "Вода", "#water", "нет", "ОК"} {
+		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
+			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
+		}
+	}
+	if err := handler.HandleAdminChatMessage(context.Background(), adminMessage("Кастомный анонс #water")); err != nil {
+		t.Fatalf("HandleAdminChatMessage(custom) error = %v", err)
+	}
+
+	preview := publisher.sent[len(publisher.sent)-2]
+	if !strings.Contains(preview.text, "Кастомный анонс #water") ||
+		!strings.Contains(preview.text, "https://t.me/c/1272818469/144934") ||
+		!preview.markdown {
+		t.Fatalf("custom preview = %#v, want markdown custom text with previous results", preview)
+	}
+
+	if err := handler.HandleAdminChatMessage(context.Background(), adminMessage("ОК")); err != nil {
+		t.Fatalf("HandleAdminChatMessage(approve) error = %v", err)
+	}
+
+	mainAnnouncement := publisher.lastSendTo(-1001)
+	if !strings.Contains(mainAnnouncement.text, "Кастомный анонс #water") ||
+		!strings.Contains(mainAnnouncement.text, "https://t.me/c/1272818469/144934") ||
+		!mainAnnouncement.markdown {
+		t.Fatalf("announcement = %#v, want markdown custom text with previous results", mainAnnouncement)
+	}
+}
+
+func TestCreateChallengeFlowAddsPreviousResultsToCustomPhotoCaption(t *testing.T) {
+	t.Parallel()
+
+	database := openAdminTestDB(t)
+	defer database.Close()
+	publisher := newCreateChallengePublisherDeps(637)
+	challengeRepo := repository.NewChallenges(database)
+	resultsMessageID := int64(144934)
+	announcements := &MoqChallengeAnnouncements{
+		GetFunc:                      challengeRepo.Get,
+		SetAnnouncementMessageIDFunc: challengeRepo.SetAnnouncementMessageID,
+		FindLatestWithResultsFunc: func(ctx context.Context, mainChatID int64) (*repository.Challenge, error) {
+			return &repository.Challenge{
+				MainChatID:       mainChatID,
+				Num:              108,
+				ResultsMessageID: &resultsMessageID,
+			}, nil
+		},
+	}
+	handler := newAdminTestHandlerWithAnnouncements(t, database, mustAdminLocation(t), publisher, announcements)
+
+	for _, text := range []string{"/challenge", "Вода", "#water", "нет", "ОК"} {
+		if err := handler.HandleAdminChatMessage(context.Background(), adminMessage(text)); err != nil {
+			t.Fatalf("HandleAdminChatMessage(%q) error = %v", text, err)
+		}
+	}
+	if err := handler.HandleAdminChatMessage(context.Background(), adminPhotoMessage("Свой анонс #water")); err != nil {
+		t.Fatalf("HandleAdminChatMessage(photo override) error = %v", err)
+	}
+
+	preview := publisher.sent[len(publisher.sent)-2]
+	if preview.photoFileID != "photo-big" ||
+		!strings.Contains(preview.text, "Свой анонс #water") ||
+		!strings.Contains(preview.text, "https://t.me/c/1/144934") ||
+		!preview.markdown {
+		t.Fatalf("photo preview = %#v, want markdown custom caption with previous results", preview)
+	}
+
+	if err := handler.HandleAdminChatMessage(context.Background(), adminMessage("ОК")); err != nil {
+		t.Fatalf("HandleAdminChatMessage(approve) error = %v", err)
+	}
+
+	mainAnnouncement := publisher.lastSendTo(-1001)
+	if mainAnnouncement.photoFileID != "photo-big" ||
+		!strings.Contains(mainAnnouncement.text, "Свой анонс #water") ||
+		!strings.Contains(mainAnnouncement.text, "https://t.me/c/1/144934") ||
+		!mainAnnouncement.markdown {
+		t.Fatalf("announcement = %#v, want markdown custom caption with previous results", mainAnnouncement)
+	}
+}
+
 func TestCreateChallengeFlowDoesNotPersistCustomAnnouncementWhenPreviewFails(t *testing.T) {
 	t.Parallel()
 
