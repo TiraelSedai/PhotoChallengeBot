@@ -21,7 +21,10 @@ var achievementMilestones = map[int]struct{}{
 	7: {},
 }
 
-const defaultSendTimeout = 10 * time.Second
+// Budget for one Telegram call, not for a series of them. sendMediaGroup routinely takes
+// seconds, and expiring the client-side deadline does not cancel it: Telegram still posts
+// the album, so every timeout turns into a duplicate album once the caller retries.
+const defaultSendTimeout = 30 * time.Second
 
 const (
 	resultPhotoBatchSize      = 10
@@ -181,9 +184,7 @@ func (s *PublisherService) publishOne(ctx context.Context, challenge repository.
 			if challenge.ResultsMessageID != nil {
 				messageID = int(*challenge.ResultsMessageID)
 			} else {
-				sendCtx, cancel := context.WithTimeout(ctx, s.sendFor)
-				sentID, err := s.sendResultSummary(sendCtx, challenge.MainChatID, post)
-				cancel()
+				sentID, err := s.sendResultSummary(ctx, challenge.MainChatID, post)
 				if err != nil {
 					_ = l.Release(ctx)
 					return fmt.Errorf("send results for challenge %d: %w", challenge.ID, err)
@@ -210,10 +211,7 @@ func (s *PublisherService) publishOne(ctx context.Context, challenge repository.
 				_ = l.Release(ctx)
 				return fmt.Errorf("pin results for challenge %d: %w", challenge.ID, err)
 			}
-			sendCtx, cancel := context.WithTimeout(ctx, s.sendFor)
-			err = s.sendResultRanking(sendCtx, challenge.MainChatID, post)
-			cancel()
-			if err != nil {
+			if err := s.sendResultRanking(ctx, challenge.MainChatID, post); err != nil {
 				_ = l.Release(ctx)
 				return fmt.Errorf("send result ranking for challenge %d: %w", challenge.ID, err)
 			}
@@ -400,7 +398,9 @@ func (s *PublisherService) sendResultSummary(ctx context.Context, chatID int64, 
 		}
 	}
 	if len(winners) == 0 {
-		return s.publisher.SendMarkdown(ctx, chatID, post.text)
+		sendCtx, cancel := context.WithTimeout(ctx, s.sendFor)
+		defer cancel()
+		return s.publisher.SendMarkdown(sendCtx, chatID, post.text)
 	}
 
 	messageID := 0
@@ -427,6 +427,10 @@ func (s *PublisherService) sendResultSummary(ctx context.Context, chatID int64, 
 	return messageID, nil
 }
 
+// ponytail: a failed album is retried by the next scheduler tick, which reposts the albums
+// that already landed. Telegram runs a send even when we abandon the response, so that is
+// unavoidable without an idempotency key it does not offer. The per-call budget in
+// sendMarkdownPhotos makes the ambiguous outcome rare instead of routine.
 func (s *PublisherService) sendResultRanking(ctx context.Context, chatID int64, post resultPost) error {
 	for start := 0; start < len(post.works); start += resultPhotoBatchSize {
 		end := min(start+resultPhotoBatchSize, len(post.works))
@@ -444,11 +448,16 @@ func (s *PublisherService) sendResultRanking(ctx context.Context, chatID int64, 
 	return nil
 }
 
+// sendMarkdownPhotos gives every Telegram call its own send budget. A single deadline shared
+// by a series of albums is spent by the first ones, so the last album fails instantly with
+// "context deadline exceeded" however many times it is retried.
 func (s *PublisherService) sendMarkdownPhotos(ctx context.Context, chatID int64, fileIDs []string, captions []string) (int, error) {
+	sendCtx, cancel := context.WithTimeout(ctx, s.sendFor)
+	defer cancel()
 	if len(fileIDs) == 1 {
-		return s.publisher.SendMarkdownPhoto(ctx, chatID, fileIDs[0], captions[0])
+		return s.publisher.SendMarkdownPhoto(sendCtx, chatID, fileIDs[0], captions[0])
 	}
-	return s.publisher.SendMarkdownPhotoGroup(ctx, chatID, fileIDs, captions)
+	return s.publisher.SendMarkdownPhotoGroup(sendCtx, chatID, fileIDs, captions)
 }
 
 func resultRankingCaption(startPlace int, works []resultWork) string {

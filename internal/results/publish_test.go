@@ -96,28 +96,40 @@ func TestPublisherPublishesPinsResultsAndSendsAchievement(t *testing.T) {
 	}
 }
 
+func TestPublisherGivesEachRankingAlbumItsOwnSendDeadline(t *testing.T) {
+	database := openResultsTestDB(t)
+	defer database.Close()
+	challengeID := createFinishedChallenge(t, database)
+	seedRankedWorks(t, database, challengeID, 23)
+
+	publisher := newResultsPublisherDeps()
+	// Three albums, each needing more than a third of the budget: one deadline shared by the
+	// whole series cannot cover them, one deadline per Telegram call can.
+	publisher.sendTimeout = 400 * time.Millisecond
+	publisher.groupDelay = 150 * time.Millisecond
+	service := newResultsPublisher(t, database, publisher)
+
+	if err := service.PublishDue(context.Background(), -1001, 10); err != nil {
+		t.Fatalf("PublishDue() error = %v", err)
+	}
+
+	if len(publisher.photoGroups) != 3 {
+		t.Fatalf("photo groups = %d, want 3 albums for 23 works", len(publisher.photoGroups))
+	}
+	stored, err := repository.NewChallenges(database).Get(context.Background(), challengeID)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if stored.ResultsPinnedAt == nil {
+		t.Fatal("ResultsPinnedAt = nil, want results marked as published")
+	}
+}
+
 func TestPublisherSendsRankingPhotosInBatchesOfTen(t *testing.T) {
 	database := openResultsTestDB(t)
 	defer database.Close()
 	challengeID := createFinishedChallenge(t, database)
-	votes := repository.NewVotes(database)
-	for idx := 1; idx <= 23; idx++ {
-		authorID := int64(100 + idx)
-		createResultUser(t, database, repository.User{
-			ID:        authorID,
-			Username:  fmt.Sprintf("user%02d", idx),
-			FirstName: fmt.Sprintf("User %02d", idx),
-		})
-		photoID := createResultPhoto(t, database, challengeID, authorID, fmt.Sprintf("file-%02d", idx))
-		if _, err := votes.AddSelfVote(context.Background(), challengeID, authorID, photoID, resultTestTime(time.Hour)); err != nil {
-			t.Fatalf("add self vote %d: %v", idx, err)
-		}
-		if idx == 1 {
-			if _, err := votes.AddManualVote(context.Background(), challengeID, 20, photoID, resultTestTime(2*time.Hour)); err != nil {
-				t.Fatalf("add manual vote %d: %v", idx, err)
-			}
-		}
-	}
+	seedRankedWorks(t, database, challengeID, 23)
 
 	publisher := newResultsPublisherDeps()
 	service := newResultsPublisher(t, database, publisher)
@@ -733,14 +745,15 @@ func newResultsPublisher(t *testing.T, database *sqlx.DB, publisher *resultsPubl
 		t.Fatalf("load templates: %v", err)
 	}
 	return NewPublisher(PublishConfig{
-		Challenges: repository.NewChallenges(database),
-		Photos:     repository.NewPhotos(database),
-		Votes:      repository.NewVotes(database),
-		Users:      repository.NewUsers(database),
-		Winners:    repository.NewChallengeWinners(database),
-		Renderer:   renderer,
-		Publisher:  publisher.mock,
-		Now:        func() time.Time { return resultTestTime(4 * time.Hour) },
+		Challenges:  repository.NewChallenges(database),
+		Photos:      repository.NewPhotos(database),
+		Votes:       repository.NewVotes(database),
+		Users:       repository.NewUsers(database),
+		Winners:     repository.NewChallengeWinners(database),
+		Renderer:    renderer,
+		Publisher:   publisher.mock,
+		Now:         func() time.Time { return resultTestTime(4 * time.Hour) },
+		SendTimeout: publisher.sendTimeout,
 	})
 }
 
@@ -789,6 +802,30 @@ func createFinishedChallengeWithTheme(t *testing.T, database *sqlx.DB, num int, 
 		t.Fatalf("set finished_at: %v", err)
 	}
 	return challenge.ID
+}
+
+// seedRankedWorks gives a challenge count distinct authors, one photo each, ranked by likes:
+// the first author gets a second vote and so wins, the rest tie on one self-vote.
+func seedRankedWorks(t *testing.T, database *sqlx.DB, challengeID int64, count int) {
+	t.Helper()
+	votes := repository.NewVotes(database)
+	for idx := 1; idx <= count; idx++ {
+		authorID := int64(100 + idx)
+		createResultUser(t, database, repository.User{
+			ID:        authorID,
+			Username:  fmt.Sprintf("user%02d", idx),
+			FirstName: fmt.Sprintf("User %02d", idx),
+		})
+		photoID := createResultPhoto(t, database, challengeID, authorID, fmt.Sprintf("file-%02d", idx))
+		if _, err := votes.AddSelfVote(context.Background(), challengeID, authorID, photoID, resultTestTime(time.Hour)); err != nil {
+			t.Fatalf("add self vote %d: %v", idx, err)
+		}
+		if idx == 1 {
+			if _, err := votes.AddManualVote(context.Background(), challengeID, 20, photoID, resultTestTime(2*time.Hour)); err != nil {
+				t.Fatalf("add manual vote %d: %v", idx, err)
+			}
+		}
+	}
 }
 
 func createResultPhoto(t *testing.T, database *sqlx.DB, challengeID, authorID int64, fileID string) int64 {
@@ -851,6 +888,8 @@ type resultsPublisherDeps struct {
 	afterMarkdown    func()
 	afterText        func()
 	pinChecksContext bool
+	sendTimeout      time.Duration
+	groupDelay       time.Duration
 }
 
 type messageCall struct {
@@ -889,7 +928,10 @@ func newResultsPublisherDeps() *resultsPublisherDeps {
 			deps.photos = append(deps.photos, photoMessageCall{chatID: chatID, fileID: fileID, caption: caption})
 			return deps.nextID(), nil
 		},
-		SendMarkdownPhotoGroupFunc: func(_ context.Context, chatID int64, fileIDs []string, captions []string) (int, error) {
+		SendMarkdownPhotoGroupFunc: func(ctx context.Context, chatID int64, fileIDs []string, captions []string) (int, error) {
+			if err := deps.waitGroupDelay(ctx); err != nil {
+				return 0, err
+			}
 			deps.photoGroups = append(deps.photoGroups, photoGroupCall{
 				chatID:   chatID,
 				fileIDs:  append([]string(nil), fileIDs...),
@@ -917,6 +959,22 @@ func newResultsPublisherDeps() *resultsPublisherDeps {
 		},
 	}
 	return deps
+}
+
+// waitGroupDelay makes an album send behave like the real one: it takes time, and it fails
+// when the caller's deadline expires mid-flight.
+func (d *resultsPublisherDeps) waitGroupDelay(ctx context.Context) error {
+	if d.groupDelay <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(d.groupDelay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (d *resultsPublisherDeps) nextID() int {
