@@ -30,17 +30,21 @@ func Open(ctx context.Context, opts Options) (*sqlx.DB, error) {
 		opts.BusyTimeout = 5000
 	}
 
-	database, err := sqlx.Open("sqlite", opts.Path)
+	// Pragmas are per-connection, and database/sql opens connections whenever it feels like it,
+	// so they belong in the DSN rather than in a one-off Exec after Open. No mmap_size: the host
+	// has 2 GB of RAM and no swap.
+	dsn := fmt.Sprintf(
+		"file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(%d)&_pragma=foreign_keys(ON)&_pragma=cache_size(-20000)",
+		opts.Path,
+		opts.BusyTimeout,
+	)
+	database, err := sqlx.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 	database.SetMaxOpenConns(1)
 
-	if err := configure(ctx, database, opts.BusyTimeout); err != nil {
-		_ = database.Close()
-		return nil, err
-	}
-	if err := migrate(database.DB, opts.MigrationsDir); err != nil {
+	if err := migrate(ctx, database.DB, opts.MigrationsDir); err != nil {
 		_ = database.Close()
 		return nil, err
 	}
@@ -48,29 +52,14 @@ func Open(ctx context.Context, opts Options) (*sqlx.DB, error) {
 	return database, nil
 }
 
-func configure(ctx context.Context, database *sqlx.DB, busyTimeout int) error {
-	pragmas := []string{
-		"PRAGMA journal_mode = WAL",
-		fmt.Sprintf("PRAGMA busy_timeout = %d", busyTimeout),
-		"PRAGMA foreign_keys = ON",
-	}
-
-	for _, pragma := range pragmas {
-		if _, err := database.ExecContext(ctx, pragma); err != nil {
-			return fmt.Errorf("apply %s: %w", pragma, err)
-		}
-	}
-	return nil
-}
-
-func migrate(database *sql.DB, migrationsDir string) error {
+func migrate(ctx context.Context, database *sql.DB, migrationsDir string) error {
 	gooseMu.Lock()
 	defer gooseMu.Unlock()
 
 	if err := goose.SetDialect("sqlite3"); err != nil {
 		return fmt.Errorf("set goose dialect: %w", err)
 	}
-	if err := goose.Up(database, migrationsDir); err != nil {
+	if err := goose.UpContext(ctx, database, migrationsDir); err != nil {
 		return fmt.Errorf("apply migrations: %w", err)
 	}
 	return nil

@@ -35,6 +35,22 @@ func TestOpenConfiguresSQLiteAndAppliesMigrations(t *testing.T) {
 		t.Fatalf("busy_timeout = %d, want 5000", busyTimeout)
 	}
 
+	var journalMode string
+	if err := database.Get(&journalMode, "PRAGMA journal_mode"); err != nil {
+		t.Fatalf("query journal_mode pragma: %v", err)
+	}
+	if journalMode != "wal" {
+		t.Fatalf("journal_mode = %q, want wal", journalMode)
+	}
+
+	var cacheSize int
+	if err := database.Get(&cacheSize, "PRAGMA cache_size"); err != nil {
+		t.Fatalf("query cache_size pragma: %v", err)
+	}
+	if cacheSize != -20000 {
+		t.Fatalf("cache_size = %d, want -20000", cacheSize)
+	}
+
 	var userTable string
 	if err := database.Get(&userTable, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'"); err != nil {
 		t.Fatalf("query users table: %v", err)
