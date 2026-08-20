@@ -34,7 +34,7 @@ func Open(ctx context.Context, opts Options) (*sqlx.DB, error) {
 	// so they belong in the DSN rather than in a one-off Exec after Open. No mmap_size: the host
 	// has 2 GB of RAM and no swap.
 	dsn := fmt.Sprintf(
-		"file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(%d)&_pragma=foreign_keys(ON)&_pragma=cache_size(-20000)",
+		"file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(%d)&_pragma=foreign_keys(ON)&_pragma=cache_size(-20000)&_pragma=synchronous(NORMAL)",
 		opts.Path,
 		opts.BusyTimeout,
 	)

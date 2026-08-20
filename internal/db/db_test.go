@@ -51,6 +51,16 @@ func TestOpenConfiguresSQLiteAndAppliesMigrations(t *testing.T) {
 		t.Fatalf("cache_size = %d, want -20000", cacheSize)
 	}
 
+	// 1 = NORMAL. FULL fsyncs on every commit, which buys nothing here and costs a 2.8 ms
+	// fsync per write; NORMAL still fsyncs at every WAL checkpoint.
+	var synchronous int
+	if err := database.Get(&synchronous, "PRAGMA synchronous"); err != nil {
+		t.Fatalf("query synchronous pragma: %v", err)
+	}
+	if synchronous != 1 {
+		t.Fatalf("synchronous = %d, want 1 (NORMAL)", synchronous)
+	}
+
 	var userTable string
 	if err := database.Get(&userTable, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'"); err != nil {
 		t.Fatalf("query users table: %v", err)
