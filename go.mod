@@ -3,7 +3,7 @@ module github.com/TiraelSedai/PhotoChallengeBot
 go 1.26
 
 require (
-	github.com/go-telegram/bot v1.20.0
+	github.com/go-telegram/bot v1.27.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/pressly/goose/v3 v3.27.1
 	modernc.org/sqlite v1.50.1

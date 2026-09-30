@@ -47,6 +47,7 @@ func TestNewRouterPanicsOnNilErrorHandler(t *testing.T) {
 		AdminChatHandler:    deps.admin,
 		PrivateStartHandler: deps.privateStart,
 		CallbackHandler:     deps.callback,
+		WelcomePublisher:    &MoqWelcomePublisher{},
 	})
 }
 
@@ -66,6 +67,7 @@ func TestNewRouterPanicsOnTypedNilMainChatHandler(t *testing.T) {
 		AdminChatHandler:    deps.admin,
 		PrivateStartHandler: deps.privateStart,
 		CallbackHandler:     deps.callback,
+		WelcomePublisher:    &MoqWelcomePublisher{},
 		OnError:             func(context.Context, *models.Update, error) {},
 	})
 }
@@ -234,6 +236,7 @@ func TestHandlerFuncReportsRouteError(t *testing.T) {
 		AdminChatHandler:    deps.admin,
 		PrivateStartHandler: deps.privateStart,
 		CallbackHandler:     deps.callback,
+		WelcomePublisher:    &MoqWelcomePublisher{},
 		OnError: func(_ context.Context, _ *models.Update, err error) {
 			gotErr = err
 		},
@@ -332,6 +335,7 @@ func newTestRouter(deps *routerDeps) *Router {
 		AdminChatHandler:    deps.admin,
 		PrivateStartHandler: deps.privateStart,
 		CallbackHandler:     deps.callback,
+		WelcomePublisher:    &MoqWelcomePublisher{},
 		OnError:             func(context.Context, *models.Update, error) {},
 	})
 }

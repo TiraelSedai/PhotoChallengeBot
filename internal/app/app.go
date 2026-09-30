@@ -33,6 +33,7 @@ type telegramRunner interface {
 	MemberDisplayName(context.Context, int64, int64) (string, error)
 	Run(context.Context) error
 	SendMarkdown(context.Context, int64, string) (int, error)
+	SendEphemeralMarkdown(context.Context, int64, int64, string) error
 	SendMarkdownPhoto(context.Context, int64, string, string) (int, error)
 	SendMarkdownPhotoGroup(context.Context, int64, []string, []string) (int, error)
 	SendText(context.Context, int64, string) (int, error)
@@ -198,6 +199,7 @@ func (a *App) Run(ctx context.Context) error {
 		AdminChatHandler:    adminHandler,
 		PrivateStartHandler: voteHandler,
 		CallbackHandler:     voteHandler,
+		WelcomePublisher:    telegramRunner,
 		OnError: func(ctx context.Context, update *models.Update, err error) {
 			a.logger.ErrorContext(ctx, "route telegram update", "error", err)
 		},

@@ -46,6 +46,7 @@ type Config struct {
 	AdminChatHandler    adminChatHandler
 	PrivateStartHandler privateStartHandler
 	CallbackHandler     callbackQueryHandler
+	WelcomePublisher    welcomePublisher
 	OnError             ErrorHandler
 }
 
@@ -57,6 +58,7 @@ type Router struct {
 	adminChatHandler    adminChatHandler
 	privateStartHandler privateStartHandler
 	callbackHandler     callbackQueryHandler
+	welcomePublisher    welcomePublisher
 	onError             ErrorHandler
 }
 
@@ -66,6 +68,7 @@ func NewRouter(cfg Config) *Router {
 	require.NotNil("admin chat handler", cfg.AdminChatHandler)
 	require.NotNil("private start handler", cfg.PrivateStartHandler)
 	require.NotNil("callback handler", cfg.CallbackHandler)
+	require.NotNil("welcome publisher", cfg.WelcomePublisher)
 	require.NotNil("error handler", cfg.OnError)
 	return &Router{
 		mainChatID:          cfg.MainChatID,
@@ -75,6 +78,7 @@ func NewRouter(cfg Config) *Router {
 		adminChatHandler:    cfg.AdminChatHandler,
 		privateStartHandler: cfg.PrivateStartHandler,
 		callbackHandler:     cfg.CallbackHandler,
+		welcomePublisher:    cfg.WelcomePublisher,
 		onError:             cfg.OnError,
 	}
 }
@@ -94,6 +98,10 @@ func (r *Router) Route(ctx context.Context, update *models.Update) error {
 
 	if update.CallbackQuery != nil {
 		return r.callbackHandler.HandleCallbackQuery(ctx, update.CallbackQuery)
+	}
+
+	if update.ChatMember != nil && update.ChatMember.Chat.ID == r.mainChatID {
+		return r.welcomeNewMember(ctx, update.ChatMember)
 	}
 
 	if update.Message == nil {

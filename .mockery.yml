@@ -45,6 +45,7 @@ packages:
       adminChatHandler:
       privateStartHandler:
       callbackQueryHandler:
+      welcomePublisher:
   github.com/TiraelSedai/PhotoChallengeBot/internal/challenge:
     interfaces:
       store:

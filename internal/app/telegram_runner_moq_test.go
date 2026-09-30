@@ -39,6 +39,9 @@ var _ telegramRunner = &MoqTelegramRunner{}
 //			RunFunc: func(context1 context.Context) error {
 //				panic("mock out the Run method")
 //			},
+//			SendEphemeralMarkdownFunc: func(context1 context.Context, n int64, n1 int64, s string) error {
+//				panic("mock out the SendEphemeralMarkdown method")
+//			},
 //			SendMarkdownFunc: func(context1 context.Context, n int64, s string) (int, error) {
 //				panic("mock out the SendMarkdown method")
 //			},
@@ -87,6 +90,9 @@ type MoqTelegramRunner struct {
 
 	// RunFunc mocks the Run method.
 	RunFunc func(context1 context.Context) error
+
+	// SendEphemeralMarkdownFunc mocks the SendEphemeralMarkdown method.
+	SendEphemeralMarkdownFunc func(context1 context.Context, n int64, n1 int64, s string) error
 
 	// SendMarkdownFunc mocks the SendMarkdown method.
 	SendMarkdownFunc func(context1 context.Context, n int64, s string) (int, error)
@@ -165,6 +171,17 @@ type MoqTelegramRunner struct {
 		Run []struct {
 			// Context1 is the context1 argument value.
 			Context1 context.Context
+		}
+		// SendEphemeralMarkdown holds details about calls to the SendEphemeralMarkdown method.
+		SendEphemeralMarkdown []struct {
+			// Context1 is the context1 argument value.
+			Context1 context.Context
+			// N is the n argument value.
+			N int64
+			// N1 is the n1 argument value.
+			N1 int64
+			// S is the s argument value.
+			S string
 		}
 		// SendMarkdown holds details about calls to the SendMarkdown method.
 		SendMarkdown []struct {
@@ -251,6 +268,7 @@ type MoqTelegramRunner struct {
 	lockMemberDisplayName      sync.RWMutex
 	lockPin                    sync.RWMutex
 	lockRun                    sync.RWMutex
+	lockSendEphemeralMarkdown  sync.RWMutex
 	lockSendMarkdown           sync.RWMutex
 	lockSendMarkdownPhoto      sync.RWMutex
 	lockSendMarkdownPhotoGroup sync.RWMutex
@@ -513,6 +531,53 @@ func (mock *MoqTelegramRunner) RunCalls() []struct {
 	mock.lockRun.RLock()
 	calls = mock.calls.Run
 	mock.lockRun.RUnlock()
+	return calls
+}
+
+// SendEphemeralMarkdown calls SendEphemeralMarkdownFunc.
+func (mock *MoqTelegramRunner) SendEphemeralMarkdown(context1 context.Context, n int64, n1 int64, s string) error {
+	callInfo := struct {
+		Context1 context.Context
+		N        int64
+		N1       int64
+		S        string
+	}{
+		Context1: context1,
+		N:        n,
+		N1:       n1,
+		S:        s,
+	}
+	mock.lockSendEphemeralMarkdown.Lock()
+	mock.calls.SendEphemeralMarkdown = append(mock.calls.SendEphemeralMarkdown, callInfo)
+	mock.lockSendEphemeralMarkdown.Unlock()
+	if mock.SendEphemeralMarkdownFunc == nil {
+		var (
+			err error
+		)
+		return err
+	}
+	return mock.SendEphemeralMarkdownFunc(context1, n, n1, s)
+}
+
+// SendEphemeralMarkdownCalls gets all the calls that were made to SendEphemeralMarkdown.
+// Check the length with:
+//
+//	len(mockedtelegramRunner.SendEphemeralMarkdownCalls())
+func (mock *MoqTelegramRunner) SendEphemeralMarkdownCalls() []struct {
+	Context1 context.Context
+	N        int64
+	N1       int64
+	S        string
+} {
+	var calls []struct {
+		Context1 context.Context
+		N        int64
+		N1       int64
+		S        string
+	}
+	mock.lockSendEphemeralMarkdown.RLock()
+	calls = mock.calls.SendEphemeralMarkdown
+	mock.lockSendEphemeralMarkdown.RUnlock()
 	return calls
 }
 

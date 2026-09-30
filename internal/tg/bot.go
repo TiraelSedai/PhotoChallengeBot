@@ -31,11 +31,17 @@ type Runner struct {
 }
 
 func New(token string, handler tgbot.HandlerFunc, options ...tgbot.Option) (*Runner, error) {
-	opts := make([]tgbot.Option, 0, len(options)+2)
+	require.NotNil("telegram handler", handler)
+	opts := make([]tgbot.Option, 0, len(options)+3)
 	opts = append(opts, options...)
 	opts = append(opts,
 		tgbot.WithDefaultHandler(handler),
 		tgbot.WithSkipGetMe(),
+		tgbot.WithAllowedUpdates(tgbot.AllowedUpdates{
+			models.AllowedUpdateMessage,
+			models.AllowedUpdateCallbackQuery,
+			models.AllowedUpdateChatMember,
+		}),
 	)
 
 	client, err := tgbot.New(token, opts...)

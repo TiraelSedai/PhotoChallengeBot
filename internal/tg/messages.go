@@ -17,6 +17,24 @@ func (r *Runner) SendText(ctx context.Context, chatID int64, text string) (int, 
 	return r.send(ctx, chatID, text, "")
 }
 
+func (r *Runner) SendEphemeralMarkdown(ctx context.Context, chatID, userID int64, text string) error {
+	message, err := r.client.SendMessage(ctx, &tgbot.SendMessageParams{
+		ChatID:    chatID,
+		Text:      text,
+		ParseMode: models.ParseModeMarkdownV1,
+		EphemeralMessageParameters: &models.EphemeralMessageParameters{
+			ReceiverUserID: userID,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("send ephemeral telegram message to %d: %w", userID, err)
+	}
+	if message == nil {
+		return errors.New("send ephemeral telegram message: empty response")
+	}
+	return nil
+}
+
 func (r *Runner) SendPoll(ctx context.Context, chatID int64, question string, options []string) (int, error) {
 	pollOptions := make([]models.InputPollOption, len(options))
 	for idx, option := range options {

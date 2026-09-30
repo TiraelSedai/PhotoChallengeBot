@@ -236,3 +236,12 @@ func TestRunnerSendsMarkdownPhotoGroup(t *testing.T) {
 		t.Fatalf("second media = %#v, want markdown photo", second)
 	}
 }
+
+func TestNewRejectsNilHandler(t *testing.T) {
+	defer func() {
+		if recovered := recover(); recovered != "telegram handler is nil" {
+			t.Fatalf("panic = %v, want telegram handler is nil", recovered)
+		}
+	}()
+	_, _ = New("123:test", nil)
+}
