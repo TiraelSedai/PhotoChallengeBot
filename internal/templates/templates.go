@@ -4,14 +4,19 @@ import (
 	"bytes"
 	"fmt"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"text/template"
 )
 
 const (
-	ChallengeAnnouncementTemplate = "challenge_announcement.md.tmpl"
-	VoteStartTemplate             = "vote_start.md.tmpl"
-	ResultsTemplate               = "results.md.tmpl"
+	ChallengeAnnouncementTemplate    = "challenge_announcement.md.tmpl"
+	ChallengePreviousResultsTemplate = "challenge_previous_results.md.tmpl"
+	VoteStartTemplate                = "vote_start.md.tmpl"
+	ResultsTemplate                  = "results.md.tmpl"
 )
+
+var announcementURLPattern = regexp.MustCompile("https?://[^\\s\\p{Z}<>()\\[\\]{}\"'`*«»“”‘’]+")
 
 type ChallengeAnnouncementData struct {
 	Num             int
@@ -78,6 +83,27 @@ func (r *Renderer) Render(name string, data any) (string, error) {
 
 func (r *Renderer) ChallengeAnnouncement(data ChallengeAnnouncementData) (string, error) {
 	return r.Render(ChallengeAnnouncementTemplate, data)
+}
+
+func (r *Renderer) CustomChallengeAnnouncement(text, prevResultsLink string) (string, error) {
+	if prevResultsLink == "" {
+		return text, nil
+	}
+	for _, link := range announcementURLPattern.FindAllString(text, -1) {
+		if strings.TrimRight(link, ".,;:!?_…") == prevResultsLink {
+			return text, nil
+		}
+	}
+
+	footer, err := r.Render(ChallengePreviousResultsTemplate, prevResultsLink)
+	if err != nil {
+		return "", err
+	}
+	footer = strings.TrimSpace(footer)
+	if text == "" {
+		return footer, nil
+	}
+	return text + "\n\n" + footer, nil
 }
 
 func (r *Renderer) VoteStart(data VoteStartData) (string, error) {

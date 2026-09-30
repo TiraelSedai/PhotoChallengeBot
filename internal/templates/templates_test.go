@@ -76,7 +76,7 @@ func TestChallengeAnnouncementSnapshot(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	got, err := renderer.Render(ChallengeAnnouncementTemplate, ChallengeAnnouncementData{
+	got, err := renderer.ChallengeAnnouncement(ChallengeAnnouncementData{
 		Num:        12,
 		Theme:      "Ночь_город *финал* [test] (v2)",
 		Hashtag:    "#photo_challenge[12]",
@@ -113,7 +113,7 @@ func TestChallengeAnnouncementIncludesPreviousResultsLink(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	got, err := renderer.Render(ChallengeAnnouncementTemplate, ChallengeAnnouncementData{
+	got, err := renderer.ChallengeAnnouncement(ChallengeAnnouncementData{
 		Num:             12,
 		Theme:           "Ночь",
 		Hashtag:         "#photo",
@@ -129,6 +129,149 @@ func TestChallengeAnnouncementIncludesPreviousResultsLink(t *testing.T) {
 	wantLine := "\n\nРезультаты прошлого челленджа — [вот тут](https://t.me/c/1272818469/42).\n"
 	if !strings.HasSuffix(got, wantLine) {
 		t.Fatalf("challenge announcement missing previous results link\n got:\n%s", got)
+	}
+}
+
+func TestCustomChallengeAnnouncement(t *testing.T) {
+	t.Parallel()
+
+	renderer, err := Load(filepath.Join("..", "..", "templates"))
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	const link = "https://t.me/c/1272818469/42"
+	const footer = "Результаты прошлого челленджа \u2014 [вот тут](" + link + ")."
+	for _, tt := range []struct {
+		name string
+		text string
+		link string
+		want string
+	}{
+		{
+			name: "custom Markdown and whitespace preserved",
+			text: "  *Новая тема*\n\nФото с тегом #ночь.  ",
+			link: link,
+			want: "  *Новая тема*\n\nФото с тегом #ночь.  \n\n" + footer,
+		},
+		{
+			name: "no previous results",
+			text: "  *Новая тема*\n",
+			want: "  *Новая тема*\n",
+		},
+		{
+			name: "photo without caption",
+			link: link,
+			want: footer,
+		},
+		{
+			name: "photo without caption or previous results",
+		},
+		{
+			name: "existing Markdown link with custom label",
+			text: "*Итоги*: [Победители здесь](" + link + ").\n",
+			link: link,
+			want: "*Итоги*: [Победители здесь](" + link + ").\n",
+		},
+		{
+			name: "existing bare link",
+			text: "Итоги: " + link,
+			link: link,
+			want: "Итоги: " + link,
+		},
+		{
+			name: "existing bare link followed by punctuation",
+			text: "Итоги: " + link + ". Следующий челлендж!",
+			link: link,
+			want: "Итоги: " + link + ". Следующий челлендж!",
+		},
+		{
+			name: "neighboring message in Markdown link",
+			text: "[Другое сообщение](" + link + "0)",
+			link: link,
+			want: "[Другое сообщение](" + link + "0)\n\n" + footer,
+		},
+		{
+			name: "neighboring message in bare link",
+			text: link + "0",
+			link: link,
+			want: link + "0\n\n" + footer,
+		},
+		{
+			name: "different query",
+			text: link + "?comment=10",
+			link: link,
+			want: link + "?comment=10\n\n" + footer,
+		},
+		{
+			name: "different fragment",
+			text: link + "#other",
+			link: link,
+			want: link + "#other\n\n" + footer,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := renderer.CustomChallengeAnnouncement(tt.text, tt.link)
+			if err != nil {
+				t.Fatalf("CustomChallengeAnnouncement() error = %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("CustomChallengeAnnouncement() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestChallengeAnnouncementsSharePreviousResultsTemplate(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	announcement, err := os.ReadFile(filepath.Join("..", "..", "templates", ChallengeAnnouncementTemplate))
+	if err != nil {
+		t.Fatalf("read announcement template: %v", err)
+	}
+	writeTemplate(t, dir, ChallengeAnnouncementTemplate, string(announcement))
+	writeTemplate(t, dir, ChallengePreviousResultsTemplate, " \nПредыдущие [итоги]({{mdLinkURL .}}) здесь.\n\t ")
+	renderer, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	const link = "https://t.me/c/1272818469/42"
+	const footer = "Предыдущие [итоги](" + link + ") здесь."
+	standard, err := renderer.ChallengeAnnouncement(ChallengeAnnouncementData{Theme: "Ночь", PrevResultsLink: link})
+	if err != nil {
+		t.Fatalf("ChallengeAnnouncement() error = %v", err)
+	}
+	if strings.Count(standard, footer) != 1 {
+		t.Fatalf("standard announcement = %q, want shared footer exactly once", standard)
+	}
+	custom, err := renderer.CustomChallengeAnnouncement("*Ночь*", link)
+	if err != nil {
+		t.Fatalf("CustomChallengeAnnouncement() error = %v", err)
+	}
+	if want := "*Ночь*\n\n" + footer; custom != want {
+		t.Fatalf("custom announcement = %q, want %q", custom, want)
+	}
+}
+
+func TestCustomChallengeAnnouncementReportsPreviousResultsTemplateError(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeTemplate(t, dir, ChallengePreviousResultsTemplate, "{{.MissingField}}")
+	renderer, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	got, err := renderer.CustomChallengeAnnouncement("*Ночь*", "https://t.me/c/1272818469/42")
+	if err == nil {
+		t.Fatal("CustomChallengeAnnouncement() error = nil, want template error")
+	}
+	if got != "" {
+		t.Fatalf("CustomChallengeAnnouncement() = %q, want no partial announcement", got)
 	}
 }
 

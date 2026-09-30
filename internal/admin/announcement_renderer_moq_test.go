@@ -23,6 +23,9 @@ var _ announcementRenderer = &MoqAnnouncementRenderer{}
 //			ChallengeAnnouncementFunc: func(challengeAnnouncementData templates.ChallengeAnnouncementData) (string, error) {
 //				panic("mock out the ChallengeAnnouncement method")
 //			},
+//			CustomChallengeAnnouncementFunc: func(s string, s1 string) (string, error) {
+//				panic("mock out the CustomChallengeAnnouncement method")
+//			},
 //		}
 //
 //		// use mockedannouncementRenderer in code that requires announcementRenderer
@@ -33,6 +36,9 @@ type MoqAnnouncementRenderer struct {
 	// ChallengeAnnouncementFunc mocks the ChallengeAnnouncement method.
 	ChallengeAnnouncementFunc func(challengeAnnouncementData templates.ChallengeAnnouncementData) (string, error)
 
+	// CustomChallengeAnnouncementFunc mocks the CustomChallengeAnnouncement method.
+	CustomChallengeAnnouncementFunc func(s string, s1 string) (string, error)
+
 	// calls tracks calls to the methods.
 	calls struct {
 		// ChallengeAnnouncement holds details about calls to the ChallengeAnnouncement method.
@@ -40,8 +46,16 @@ type MoqAnnouncementRenderer struct {
 			// ChallengeAnnouncementData is the challengeAnnouncementData argument value.
 			ChallengeAnnouncementData templates.ChallengeAnnouncementData
 		}
+		// CustomChallengeAnnouncement holds details about calls to the CustomChallengeAnnouncement method.
+		CustomChallengeAnnouncement []struct {
+			// S is the s argument value.
+			S string
+			// S1 is the s1 argument value.
+			S1 string
+		}
 	}
-	lockChallengeAnnouncement sync.RWMutex
+	lockChallengeAnnouncement       sync.RWMutex
+	lockCustomChallengeAnnouncement sync.RWMutex
 }
 
 // ChallengeAnnouncement calls ChallengeAnnouncementFunc.
@@ -77,5 +91,45 @@ func (mock *MoqAnnouncementRenderer) ChallengeAnnouncementCalls() []struct {
 	mock.lockChallengeAnnouncement.RLock()
 	calls = mock.calls.ChallengeAnnouncement
 	mock.lockChallengeAnnouncement.RUnlock()
+	return calls
+}
+
+// CustomChallengeAnnouncement calls CustomChallengeAnnouncementFunc.
+func (mock *MoqAnnouncementRenderer) CustomChallengeAnnouncement(s string, s1 string) (string, error) {
+	callInfo := struct {
+		S  string
+		S1 string
+	}{
+		S:  s,
+		S1: s1,
+	}
+	mock.lockCustomChallengeAnnouncement.Lock()
+	mock.calls.CustomChallengeAnnouncement = append(mock.calls.CustomChallengeAnnouncement, callInfo)
+	mock.lockCustomChallengeAnnouncement.Unlock()
+	if mock.CustomChallengeAnnouncementFunc == nil {
+		var (
+			s2  string
+			err error
+		)
+		return s2, err
+	}
+	return mock.CustomChallengeAnnouncementFunc(s, s1)
+}
+
+// CustomChallengeAnnouncementCalls gets all the calls that were made to CustomChallengeAnnouncement.
+// Check the length with:
+//
+//	len(mockedannouncementRenderer.CustomChallengeAnnouncementCalls())
+func (mock *MoqAnnouncementRenderer) CustomChallengeAnnouncementCalls() []struct {
+	S  string
+	S1 string
+} {
+	var calls []struct {
+		S  string
+		S1 string
+	}
+	mock.lockCustomChallengeAnnouncement.RLock()
+	calls = mock.calls.CustomChallengeAnnouncement
+	mock.lockCustomChallengeAnnouncement.RUnlock()
 	return calls
 }

@@ -9,7 +9,5 @@
 В конце пришлю форму для голосования.
 
 Победитель получит ачивку в Клубе, а его фото станет обложкой чата.
-{{- if .PrevResultsLink }}
-
-Результаты прошлого челленджа — [вот тут]({{mdLinkURL .PrevResultsLink}}).
-{{- end }}
+{{if .PrevResultsLink}}
+{{template "challenge_previous_results.md.tmpl" .PrevResultsLink}}{{end -}}

@@ -51,6 +51,7 @@ type challengeAnnouncements interface {
 
 type announcementRenderer interface {
 	ChallengeAnnouncement(templates.ChallengeAnnouncementData) (string, error)
+	CustomChallengeAnnouncement(string, string) (string, error)
 }
 
 type createChallengePublisher interface {
@@ -317,18 +318,22 @@ func (h *CreateChallengeHandler) acceptDates(ctx context.Context, adminUserID in
 	payload.AcceptUntilAt = timeString(plan.AcceptUntilAt)
 	payload.ReminderAt = timeString(plan.ReminderAt)
 	payload.DraftText = draft
+	payload.PrevResultsLink = prevResultsLink
+	payload.PrevResultsResolved = true
+	if payload.PhotoFileID != "" {
+		_, err = h.publisher.SendMarkdownPhoto(ctx, h.adminChatID, payload.PhotoFileID, draft)
+	} else {
+		_, err = h.publisher.SendMarkdown(ctx, h.adminChatID, draft+"\n\n"+approvePrompt)
+	}
+	if err != nil {
+		return err
+	}
 	if err := h.savePayload(ctx, adminUserID, stepApprove, payload); err != nil {
 		return err
 	}
-
 	if payload.PhotoFileID != "" {
-		if _, err := h.publisher.SendMarkdownPhoto(ctx, h.adminChatID, payload.PhotoFileID, draft); err != nil {
-			return err
-		}
 		_, err = h.publisher.SendMarkdown(ctx, h.adminChatID, approvePrompt)
-		return err
 	}
-	_, err = h.publisher.SendMarkdown(ctx, h.adminChatID, draft+"\n\n"+approvePrompt)
 	return err
 }
 
@@ -360,28 +365,33 @@ func (h *CreateChallengeHandler) approve(ctx context.Context, adminUserID int64,
 	}
 
 	announcementText := strings.TrimSpace(text)
-	if photoFileID != "" {
-		announcementText = customAnnouncementText(announcementText, payload.DraftText)
+	if photoFileID != "" || !isOK(announcementText) {
+		if payload.AnnouncementMessageID != 0 {
+			_, err := h.publisher.SendMarkdown(ctx, h.adminChatID, "Анонс уже опубликован. Пришли `ОК`, чтобы повторить закрепление.")
+			return err
+		}
+		if !payload.PrevResultsResolved {
+			// Older drafts only stored rendered text; resolve their link on the first edit.
+			payload.PrevResultsLink, err = h.previousResultsLink(ctx)
+			if err != nil {
+				return err
+			}
+			payload.PrevResultsResolved = true
+		}
+		announcementText, err = h.renderer.CustomChallengeAnnouncement(announcementText, payload.PrevResultsLink)
+		if err != nil {
+			return err
+		}
 		payload.PhotoFileID = photoFileID
 		payload.AnnouncementText = announcementText
 		payload.AnnouncementMarkdown = true
 		payload.AnnouncementSelected = true
-		if _, err := h.publisher.SendMarkdownPhoto(ctx, h.adminChatID, photoFileID, announcementText); err != nil {
-			return err
+		if photoFileID != "" {
+			_, err = h.publisher.SendMarkdownPhoto(ctx, h.adminChatID, photoFileID, announcementText)
+		} else {
+			_, err = h.publisher.SendMarkdown(ctx, h.adminChatID, announcementText)
 		}
-		if err := h.savePayload(ctx, adminUserID, stepApprove, payload); err != nil {
-			return err
-		}
-		_, err = h.publisher.SendMarkdown(ctx, h.adminChatID, approvePrompt)
-		return err
-	}
-	if !isOK(announcementText) {
-		announcementText = customAnnouncementText(announcementText, payload.DraftText)
-		payload.PhotoFileID = ""
-		payload.AnnouncementText = announcementText
-		payload.AnnouncementMarkdown = true
-		payload.AnnouncementSelected = true
-		if _, err := h.publisher.SendMarkdown(ctx, h.adminChatID, announcementText); err != nil {
+		if err != nil {
 			return err
 		}
 		if err := h.savePayload(ctx, adminUserID, stepApprove, payload); err != nil {
@@ -517,6 +527,8 @@ type createChallengePayload struct {
 	ReminderAt            string `json:"reminder_at,omitempty"`
 	PhotoFileID           string `json:"photo_file_id,omitempty"`
 	DraftText             string `json:"draft_text,omitempty"`
+	PrevResultsLink       string `json:"prev_results_link,omitempty"`
+	PrevResultsResolved   bool   `json:"prev_results_resolved,omitempty"`
 	AnnouncementSelected  bool   `json:"announcement_selected,omitempty"`
 	AnnouncementText      string `json:"announcement_text,omitempty"`
 	AnnouncementMarkdown  bool   `json:"announcement_markdown,omitempty"`
@@ -530,27 +542,6 @@ func decodePayload(payloadJSON string) (createChallengePayload, error) {
 		return createChallengePayload{}, fmt.Errorf("decode create challenge payload: %w", err)
 	}
 	return payload, nil
-}
-
-func customAnnouncementText(text string, draft string) string {
-	previousResultsLine := previousResultsLine(draft)
-	if previousResultsLine == "" || strings.Contains(text, previousResultsLine) {
-		return text
-	}
-	if text == "" {
-		return previousResultsLine
-	}
-	return text + "\n\n" + previousResultsLine
-}
-
-func previousResultsLine(draft string) string {
-	for _, line := range strings.Split(draft, "\n") {
-		line = strings.TrimSpace(line)
-		if strings.Contains(line, "Результаты прошлого челленджа") {
-			return line
-		}
-	}
-	return ""
 }
 
 func telegramUser(user models.User) repository.User {
