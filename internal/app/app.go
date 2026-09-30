@@ -36,6 +36,7 @@ type telegramRunner interface {
 	SendMarkdownPhoto(context.Context, int64, string, string) (int, error)
 	SendMarkdownPhotoGroup(context.Context, int64, []string, []string) (int, error)
 	SendText(context.Context, int64, string) (int, error)
+	SendPoll(context.Context, int64, string, []string) (int, error)
 	SendTextReply(context.Context, int64, string, int) (int, error)
 	SendPhoto(context.Context, int64, string, string, *models.InlineKeyboardMarkup) (int, error)
 	EditPhoto(context.Context, int64, int, string, string, *models.InlineKeyboardMarkup) error
@@ -127,6 +128,7 @@ func (a *App) Run(ctx context.Context) error {
 		Users:       users,
 		Publisher:   telegramRunner,
 		Now:         now,
+		RandomIndex: rand.Intn,
 	})
 	createChallengeHandler := admin.NewCreateChallengeHandler(admin.CreateChallengeConfig{
 		AdminChatID:   a.config.AdminChatID,

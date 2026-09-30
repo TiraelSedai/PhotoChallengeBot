@@ -22,14 +22,26 @@ var _ reportChallenges = &MoqReportChallenges{}
 //
 //		// make and configure a mocked reportChallenges
 //		mockedreportChallenges := &MoqReportChallenges{
+//			ClaimTopicPollFunc: func(context1 context.Context, n int64, time1 time.Time) (bool, error) {
+//				panic("mock out the ClaimTopicPoll method")
+//			},
 //			ClaimTopicReportFunc: func(context1 context.Context, n int64, time1 time.Time) (bool, error) {
 //				panic("mock out the ClaimTopicReport method")
+//			},
+//			ListUnsentTopicPollsFunc: func(context1 context.Context, n int64, n1 int) ([]repository.Challenge, error) {
+//				panic("mock out the ListUnsentTopicPolls method")
 //			},
 //			ListUnsentTopicReportsFunc: func(context1 context.Context, n int64, n1 int) ([]repository.Challenge, error) {
 //				panic("mock out the ListUnsentTopicReports method")
 //			},
+//			MarkTopicPollSentFunc: func(context1 context.Context, n int64, time1 time.Time, time11 time.Time) (bool, error) {
+//				panic("mock out the MarkTopicPollSent method")
+//			},
 //			MarkTopicReportSentFunc: func(context1 context.Context, n int64, time1 time.Time, time11 time.Time) (bool, error) {
 //				panic("mock out the MarkTopicReportSent method")
+//			},
+//			ReleaseTopicPollClaimFunc: func(context1 context.Context, n int64, time1 time.Time) error {
+//				panic("mock out the ReleaseTopicPollClaim method")
 //			},
 //			ReleaseTopicReportClaimFunc: func(context1 context.Context, n int64, time1 time.Time) error {
 //				panic("mock out the ReleaseTopicReportClaim method")
@@ -41,20 +53,41 @@ var _ reportChallenges = &MoqReportChallenges{}
 //
 //	}
 type MoqReportChallenges struct {
+	// ClaimTopicPollFunc mocks the ClaimTopicPoll method.
+	ClaimTopicPollFunc func(context1 context.Context, n int64, time1 time.Time) (bool, error)
+
 	// ClaimTopicReportFunc mocks the ClaimTopicReport method.
 	ClaimTopicReportFunc func(context1 context.Context, n int64, time1 time.Time) (bool, error)
+
+	// ListUnsentTopicPollsFunc mocks the ListUnsentTopicPolls method.
+	ListUnsentTopicPollsFunc func(context1 context.Context, n int64, n1 int) ([]repository.Challenge, error)
 
 	// ListUnsentTopicReportsFunc mocks the ListUnsentTopicReports method.
 	ListUnsentTopicReportsFunc func(context1 context.Context, n int64, n1 int) ([]repository.Challenge, error)
 
+	// MarkTopicPollSentFunc mocks the MarkTopicPollSent method.
+	MarkTopicPollSentFunc func(context1 context.Context, n int64, time1 time.Time, time11 time.Time) (bool, error)
+
 	// MarkTopicReportSentFunc mocks the MarkTopicReportSent method.
 	MarkTopicReportSentFunc func(context1 context.Context, n int64, time1 time.Time, time11 time.Time) (bool, error)
+
+	// ReleaseTopicPollClaimFunc mocks the ReleaseTopicPollClaim method.
+	ReleaseTopicPollClaimFunc func(context1 context.Context, n int64, time1 time.Time) error
 
 	// ReleaseTopicReportClaimFunc mocks the ReleaseTopicReportClaim method.
 	ReleaseTopicReportClaimFunc func(context1 context.Context, n int64, time1 time.Time) error
 
 	// calls tracks calls to the methods.
 	calls struct {
+		// ClaimTopicPoll holds details about calls to the ClaimTopicPoll method.
+		ClaimTopicPoll []struct {
+			// Context1 is the context1 argument value.
+			Context1 context.Context
+			// N is the n argument value.
+			N int64
+			// Time1 is the time1 argument value.
+			Time1 time.Time
+		}
 		// ClaimTopicReport holds details about calls to the ClaimTopicReport method.
 		ClaimTopicReport []struct {
 			// Context1 is the context1 argument value.
@@ -64,6 +97,15 @@ type MoqReportChallenges struct {
 			// Time1 is the time1 argument value.
 			Time1 time.Time
 		}
+		// ListUnsentTopicPolls holds details about calls to the ListUnsentTopicPolls method.
+		ListUnsentTopicPolls []struct {
+			// Context1 is the context1 argument value.
+			Context1 context.Context
+			// N is the n argument value.
+			N int64
+			// N1 is the n1 argument value.
+			N1 int
+		}
 		// ListUnsentTopicReports holds details about calls to the ListUnsentTopicReports method.
 		ListUnsentTopicReports []struct {
 			// Context1 is the context1 argument value.
@@ -72,6 +114,17 @@ type MoqReportChallenges struct {
 			N int64
 			// N1 is the n1 argument value.
 			N1 int
+		}
+		// MarkTopicPollSent holds details about calls to the MarkTopicPollSent method.
+		MarkTopicPollSent []struct {
+			// Context1 is the context1 argument value.
+			Context1 context.Context
+			// N is the n argument value.
+			N int64
+			// Time1 is the time1 argument value.
+			Time1 time.Time
+			// Time11 is the time11 argument value.
+			Time11 time.Time
 		}
 		// MarkTopicReportSent holds details about calls to the MarkTopicReportSent method.
 		MarkTopicReportSent []struct {
@@ -84,6 +137,15 @@ type MoqReportChallenges struct {
 			// Time11 is the time11 argument value.
 			Time11 time.Time
 		}
+		// ReleaseTopicPollClaim holds details about calls to the ReleaseTopicPollClaim method.
+		ReleaseTopicPollClaim []struct {
+			// Context1 is the context1 argument value.
+			Context1 context.Context
+			// N is the n argument value.
+			N int64
+			// Time1 is the time1 argument value.
+			Time1 time.Time
+		}
 		// ReleaseTopicReportClaim holds details about calls to the ReleaseTopicReportClaim method.
 		ReleaseTopicReportClaim []struct {
 			// Context1 is the context1 argument value.
@@ -94,10 +156,58 @@ type MoqReportChallenges struct {
 			Time1 time.Time
 		}
 	}
+	lockClaimTopicPoll          sync.RWMutex
 	lockClaimTopicReport        sync.RWMutex
+	lockListUnsentTopicPolls    sync.RWMutex
 	lockListUnsentTopicReports  sync.RWMutex
+	lockMarkTopicPollSent       sync.RWMutex
 	lockMarkTopicReportSent     sync.RWMutex
+	lockReleaseTopicPollClaim   sync.RWMutex
 	lockReleaseTopicReportClaim sync.RWMutex
+}
+
+// ClaimTopicPoll calls ClaimTopicPollFunc.
+func (mock *MoqReportChallenges) ClaimTopicPoll(context1 context.Context, n int64, time1 time.Time) (bool, error) {
+	callInfo := struct {
+		Context1 context.Context
+		N        int64
+		Time1    time.Time
+	}{
+		Context1: context1,
+		N:        n,
+		Time1:    time1,
+	}
+	mock.lockClaimTopicPoll.Lock()
+	mock.calls.ClaimTopicPoll = append(mock.calls.ClaimTopicPoll, callInfo)
+	mock.lockClaimTopicPoll.Unlock()
+	if mock.ClaimTopicPollFunc == nil {
+		var (
+			b   bool
+			err error
+		)
+		return b, err
+	}
+	return mock.ClaimTopicPollFunc(context1, n, time1)
+}
+
+// ClaimTopicPollCalls gets all the calls that were made to ClaimTopicPoll.
+// Check the length with:
+//
+//	len(mockedreportChallenges.ClaimTopicPollCalls())
+func (mock *MoqReportChallenges) ClaimTopicPollCalls() []struct {
+	Context1 context.Context
+	N        int64
+	Time1    time.Time
+} {
+	var calls []struct {
+		Context1 context.Context
+		N        int64
+		Time1    time.Time
+	}
+	mock.lockClaimTopicPoll.RLock()
+	calls = mock.calls.ClaimTopicPoll
+	mock.lockClaimTopicPoll.RUnlock()
+	return calls
 }
 
 // ClaimTopicReport calls ClaimTopicReportFunc.
@@ -144,6 +254,50 @@ func (mock *MoqReportChallenges) ClaimTopicReportCalls() []struct {
 	return calls
 }
 
+// ListUnsentTopicPolls calls ListUnsentTopicPollsFunc.
+func (mock *MoqReportChallenges) ListUnsentTopicPolls(context1 context.Context, n int64, n1 int) ([]repository.Challenge, error) {
+	callInfo := struct {
+		Context1 context.Context
+		N        int64
+		N1       int
+	}{
+		Context1: context1,
+		N:        n,
+		N1:       n1,
+	}
+	mock.lockListUnsentTopicPolls.Lock()
+	mock.calls.ListUnsentTopicPolls = append(mock.calls.ListUnsentTopicPolls, callInfo)
+	mock.lockListUnsentTopicPolls.Unlock()
+	if mock.ListUnsentTopicPollsFunc == nil {
+		var (
+			challenges []repository.Challenge
+			err        error
+		)
+		return challenges, err
+	}
+	return mock.ListUnsentTopicPollsFunc(context1, n, n1)
+}
+
+// ListUnsentTopicPollsCalls gets all the calls that were made to ListUnsentTopicPolls.
+// Check the length with:
+//
+//	len(mockedreportChallenges.ListUnsentTopicPollsCalls())
+func (mock *MoqReportChallenges) ListUnsentTopicPollsCalls() []struct {
+	Context1 context.Context
+	N        int64
+	N1       int
+} {
+	var calls []struct {
+		Context1 context.Context
+		N        int64
+		N1       int
+	}
+	mock.lockListUnsentTopicPolls.RLock()
+	calls = mock.calls.ListUnsentTopicPolls
+	mock.lockListUnsentTopicPolls.RUnlock()
+	return calls
+}
+
 // ListUnsentTopicReports calls ListUnsentTopicReportsFunc.
 func (mock *MoqReportChallenges) ListUnsentTopicReports(context1 context.Context, n int64, n1 int) ([]repository.Challenge, error) {
 	callInfo := struct {
@@ -185,6 +339,54 @@ func (mock *MoqReportChallenges) ListUnsentTopicReportsCalls() []struct {
 	mock.lockListUnsentTopicReports.RLock()
 	calls = mock.calls.ListUnsentTopicReports
 	mock.lockListUnsentTopicReports.RUnlock()
+	return calls
+}
+
+// MarkTopicPollSent calls MarkTopicPollSentFunc.
+func (mock *MoqReportChallenges) MarkTopicPollSent(context1 context.Context, n int64, time1 time.Time, time11 time.Time) (bool, error) {
+	callInfo := struct {
+		Context1 context.Context
+		N        int64
+		Time1    time.Time
+		Time11   time.Time
+	}{
+		Context1: context1,
+		N:        n,
+		Time1:    time1,
+		Time11:   time11,
+	}
+	mock.lockMarkTopicPollSent.Lock()
+	mock.calls.MarkTopicPollSent = append(mock.calls.MarkTopicPollSent, callInfo)
+	mock.lockMarkTopicPollSent.Unlock()
+	if mock.MarkTopicPollSentFunc == nil {
+		var (
+			b   bool
+			err error
+		)
+		return b, err
+	}
+	return mock.MarkTopicPollSentFunc(context1, n, time1, time11)
+}
+
+// MarkTopicPollSentCalls gets all the calls that were made to MarkTopicPollSent.
+// Check the length with:
+//
+//	len(mockedreportChallenges.MarkTopicPollSentCalls())
+func (mock *MoqReportChallenges) MarkTopicPollSentCalls() []struct {
+	Context1 context.Context
+	N        int64
+	Time1    time.Time
+	Time11   time.Time
+} {
+	var calls []struct {
+		Context1 context.Context
+		N        int64
+		Time1    time.Time
+		Time11   time.Time
+	}
+	mock.lockMarkTopicPollSent.RLock()
+	calls = mock.calls.MarkTopicPollSent
+	mock.lockMarkTopicPollSent.RUnlock()
 	return calls
 }
 
@@ -233,6 +435,49 @@ func (mock *MoqReportChallenges) MarkTopicReportSentCalls() []struct {
 	mock.lockMarkTopicReportSent.RLock()
 	calls = mock.calls.MarkTopicReportSent
 	mock.lockMarkTopicReportSent.RUnlock()
+	return calls
+}
+
+// ReleaseTopicPollClaim calls ReleaseTopicPollClaimFunc.
+func (mock *MoqReportChallenges) ReleaseTopicPollClaim(context1 context.Context, n int64, time1 time.Time) error {
+	callInfo := struct {
+		Context1 context.Context
+		N        int64
+		Time1    time.Time
+	}{
+		Context1: context1,
+		N:        n,
+		Time1:    time1,
+	}
+	mock.lockReleaseTopicPollClaim.Lock()
+	mock.calls.ReleaseTopicPollClaim = append(mock.calls.ReleaseTopicPollClaim, callInfo)
+	mock.lockReleaseTopicPollClaim.Unlock()
+	if mock.ReleaseTopicPollClaimFunc == nil {
+		var (
+			err error
+		)
+		return err
+	}
+	return mock.ReleaseTopicPollClaimFunc(context1, n, time1)
+}
+
+// ReleaseTopicPollClaimCalls gets all the calls that were made to ReleaseTopicPollClaim.
+// Check the length with:
+//
+//	len(mockedreportChallenges.ReleaseTopicPollClaimCalls())
+func (mock *MoqReportChallenges) ReleaseTopicPollClaimCalls() []struct {
+	Context1 context.Context
+	N        int64
+	Time1    time.Time
+} {
+	var calls []struct {
+		Context1 context.Context
+		N        int64
+		Time1    time.Time
+	}
+	mock.lockReleaseTopicPollClaim.RLock()
+	calls = mock.calls.ReleaseTopicPollClaim
+	mock.lockReleaseTopicPollClaim.RUnlock()
 	return calls
 }
 

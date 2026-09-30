@@ -17,6 +17,28 @@ func (r *Runner) SendText(ctx context.Context, chatID int64, text string) (int, 
 	return r.send(ctx, chatID, text, "")
 }
 
+func (r *Runner) SendPoll(ctx context.Context, chatID int64, question string, options []string) (int, error) {
+	pollOptions := make([]models.InputPollOption, len(options))
+	for idx, option := range options {
+		pollOptions[idx] = models.InputPollOption{Text: option}
+	}
+	message, err := r.client.SendPoll(ctx, &tgbot.SendPollParams{
+		ChatID:                chatID,
+		Question:              question,
+		Options:               pollOptions,
+		IsAnonymous:           tgbot.True(),
+		Type:                  "regular",
+		AllowsMultipleAnswers: true,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("send telegram poll: %w", err)
+	}
+	if message == nil {
+		return 0, errors.New("send telegram poll: empty response")
+	}
+	return message.ID, nil
+}
+
 func (r *Runner) SendTextReply(ctx context.Context, chatID int64, text string, replyToMessageID int) (int, error) {
 	return r.sendWithReply(ctx, chatID, text, "", replyToMessageID)
 }

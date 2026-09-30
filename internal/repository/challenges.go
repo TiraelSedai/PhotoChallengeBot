@@ -20,6 +20,7 @@ const (
 	resultsClaimTimeout     = 5 * time.Minute
 	achievementClaimTimeout = 5 * time.Minute
 	topicReportClaimTimeout = 5 * time.Minute
+	topicPollClaimTimeout   = 5 * time.Minute
 	publishedVotingDuration = 48 * time.Hour
 )
 
@@ -814,6 +815,85 @@ func (r *Challenges) ReleaseTopicReportClaim(ctx context.Context, id int64, clai
 	return nil
 }
 
+func (r *Challenges) ListUnsentTopicPolls(ctx context.Context, mainChatID int64, limit int) ([]Challenge, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	var rows []challengeRow
+	if err := r.db.SelectContext(ctx, &rows, challengeSelectSQL+`
+		WHERE state = ?
+			AND topic_poll_sent_at IS NULL
+			AND (? = 0 OR main_chat_id = ?)
+		ORDER BY finished_at ASC, id ASC
+		LIMIT ?
+	`, ChallengeStateFinished, mainChatID, mainChatID, limit); err != nil {
+		return nil, fmt.Errorf("list unsent topic polls: %w", err)
+	}
+	return challengeRows(rows)
+}
+
+func (r *Challenges) ClaimTopicPoll(ctx context.Context, id int64, claimedAt time.Time) (bool, error) {
+	if claimedAt.IsZero() {
+		claimedAt = time.Now().UTC()
+	}
+	staleClaimBefore := claimedAt.Add(-topicPollClaimTimeout)
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE challenges
+		SET topic_poll_sending_at = ?, updated_at = ?
+		WHERE id = ?
+			AND state = ?
+			AND topic_poll_sent_at IS NULL
+			AND (
+				topic_poll_sending_at IS NULL
+				OR julianday(topic_poll_sending_at) <= julianday(?)
+			)
+	`, timeString(claimedAt), timeString(claimedAt), id, ChallengeStateFinished, timeString(staleClaimBefore))
+	if err != nil {
+		return false, fmt.Errorf("claim topic poll: %w", err)
+	}
+	return changed(result, "claim topic poll")
+}
+
+func (r *Challenges) MarkTopicPollSent(ctx context.Context, id int64, claimedAt, sentAt time.Time) (bool, error) {
+	if sentAt.IsZero() {
+		sentAt = time.Now().UTC()
+	}
+	if claimedAt.IsZero() {
+		return false, fmt.Errorf("mark topic poll sent: claimedAt is required")
+	}
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE challenges
+		SET topic_poll_sent_at = ?,
+			topic_poll_sending_at = NULL,
+			updated_at = ?
+		WHERE id = ?
+			AND state = ?
+			AND topic_poll_sent_at IS NULL
+			AND topic_poll_sending_at = ?
+	`, timeString(sentAt), timeString(sentAt), id, ChallengeStateFinished, timeString(claimedAt))
+	if err != nil {
+		return false, fmt.Errorf("mark topic poll sent: %w", err)
+	}
+	return changed(result, "mark topic poll sent")
+}
+
+func (r *Challenges) ReleaseTopicPollClaim(ctx context.Context, id int64, claimedAt time.Time) error {
+	if claimedAt.IsZero() {
+		return fmt.Errorf("release topic poll claim: claimedAt is required")
+	}
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE challenges
+		SET topic_poll_sending_at = NULL, updated_at = ?
+		WHERE id = ?
+			AND topic_poll_sending_at = ?
+			AND topic_poll_sent_at IS NULL
+	`, timeString(time.Now().UTC()), id, timeString(claimedAt))
+	if err != nil {
+		return fmt.Errorf("release topic poll claim: %w", err)
+	}
+	return nil
+}
+
 func (r *Challenges) Get(ctx context.Context, id int64) (Challenge, error) {
 	var row challengeRow
 	if err := r.db.GetContext(ctx, &row, challengeSelectSQL+" WHERE id = ?", id); err != nil {
@@ -879,7 +959,7 @@ const challengeSelectSQL = `
 		finished_at, announcement_message_id, vote_message_id, vote_pinned_at,
 		results_sending_at, results_message_id, results_chat_id, results_pinned_at, achievements_sending_at,
 		achievements_message_id, achievements_sent_at, topic_report_sending_at,
-		topic_report_sent_at,
+		topic_report_sent_at, topic_poll_sending_at, topic_poll_sent_at,
 		created_by_user_id, created_at, updated_at
 	FROM challenges
 `
@@ -913,6 +993,8 @@ type challengeRow struct {
 	AchievementsSentAt    sql.NullString `db:"achievements_sent_at"`
 	TopicReportSendingAt  sql.NullString `db:"topic_report_sending_at"`
 	TopicReportSentAt     sql.NullString `db:"topic_report_sent_at"`
+	TopicPollSendingAt    sql.NullString `db:"topic_poll_sending_at"`
+	TopicPollSentAt       sql.NullString `db:"topic_poll_sent_at"`
 	CreatedByUserID       int64          `db:"created_by_user_id"`
 	CreatedAt             string         `db:"created_at"`
 	UpdatedAt             string         `db:"updated_at"`
@@ -1003,6 +1085,14 @@ func (r challengeRow) challenge() (Challenge, error) {
 	if err != nil {
 		return Challenge{}, fmt.Errorf("parse challenge topic_report_sent_at: %w", err)
 	}
+	topicPollSendingAt, err := timePtrFromNull(r.TopicPollSendingAt)
+	if err != nil {
+		return Challenge{}, fmt.Errorf("parse challenge topic_poll_sending_at: %w", err)
+	}
+	topicPollSentAt, err := timePtrFromNull(r.TopicPollSentAt)
+	if err != nil {
+		return Challenge{}, fmt.Errorf("parse challenge topic_poll_sent_at: %w", err)
+	}
 	createdAt, err := parseTime(r.CreatedAt)
 	if err != nil {
 		return Challenge{}, fmt.Errorf("parse challenge created_at: %w", err)
@@ -1041,6 +1131,8 @@ func (r challengeRow) challenge() (Challenge, error) {
 		AchievementsSentAt:    achievementsSentAt,
 		TopicReportSendingAt:  topicReportSendingAt,
 		TopicReportSentAt:     topicReportSentAt,
+		TopicPollSendingAt:    topicPollSendingAt,
+		TopicPollSentAt:       topicPollSentAt,
 		CreatedByUserID:       r.CreatedByUserID,
 		CreatedAt:             createdAt,
 		UpdatedAt:             updatedAt,

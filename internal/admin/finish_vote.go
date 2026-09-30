@@ -16,7 +16,7 @@ const (
 	finishVoteDoneMessage                = "Голосование завершено. Результаты ниже."
 	finishVoteAbsentMessage              = "Активного голосования нет."
 	finishVotePublishFailedMessage       = "Голосование завершено, но результаты не удалось опубликовать автоматически. Планировщик попробует еще раз."
-	finishVoteTopicsPublishFailedMessage = "Голосование завершено, но темы не удалось отправить в админку автоматически. Планировщик попробует еще раз."
+	finishVoteTopicsPublishFailedMessage = "Голосование завершено, но отчёт с темами или опрос не удалось опубликовать автоматически. Планировщик попробует еще раз."
 )
 
 type finishVoteChallenges interface {
@@ -112,7 +112,7 @@ func (h *FinishVoteHandler) HandleAdminChatMessage(ctx context.Context, message 
 	topicErr := h.topics.PublishOne(ctx, finishedChallenge)
 	if topicErr != nil {
 		if _, sendErr := h.publisher.SendText(ctx, h.adminChatID, finishVoteTopicsPublishFailedMessage); sendErr != nil {
-			topicErr = fmt.Errorf("publish topic report: %w; notify admin: %v", topicErr, sendErr)
+			topicErr = fmt.Errorf("publish topics: %w; notify admin: %v", topicErr, sendErr)
 		}
 	}
 	if err := h.results.PublishOne(ctx, open.ID); err != nil {
