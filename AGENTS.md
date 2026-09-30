@@ -1,5 +1,3 @@
-@/home/tirael/.codex/RTK.md
-
 Do not add one-line helper methods that only wrap a single obvious operation; inline the operation unless the helper carries real domain meaning or removes meaningful duplication.
 
 Struct fields must not be nil after construction. `New*` constructors must check every dependency that becomes a pointer, interface, function, map, slice, channel, or other nil-able struct field, and panic when any such input is nil. Do not guard struct fields for nil inside ordinary methods; the invariant is guaranteed at construction time. Production code must pass every constructor dependency explicitly instead of relying on no-op/stub/default implementations. Tests may replace fields with generated mocks, but should preserve the same non-nil field invariant unless they intentionally test constructor panics.
