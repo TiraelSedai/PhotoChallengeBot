@@ -2,6 +2,7 @@ package topic
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -24,6 +25,10 @@ type reportChallenges interface {
 	ClaimTopicReport(context.Context, int64, time.Time) (bool, error)
 	MarkTopicReportSent(context.Context, int64, time.Time, time.Time) (bool, error)
 	ReleaseTopicReportClaim(context.Context, int64, time.Time) error
+	ListUnsentTopicPolls(context.Context, int64, int) ([]repository.Challenge, error)
+	ClaimTopicPoll(context.Context, int64, time.Time) (bool, error)
+	MarkTopicPollSent(context.Context, int64, time.Time, time.Time) (bool, error)
+	ReleaseTopicPollClaim(context.Context, int64, time.Time) error
 }
 
 type reportSuggestions interface {
@@ -36,6 +41,7 @@ type reportUsers interface {
 
 type reportPublisher interface {
 	SendText(context.Context, int64, string) (int, error)
+	SendPoll(context.Context, int64, string, []string) (int, error)
 }
 
 type ReportConfig struct {
@@ -45,6 +51,7 @@ type ReportConfig struct {
 	Users              reportUsers
 	Publisher          reportPublisher
 	Now                func() time.Time
+	RandomIndex        func(int) int
 	SendTimeout        time.Duration
 	PersistenceTimeout time.Duration
 }
@@ -56,6 +63,7 @@ type Reporter struct {
 	users       reportUsers
 	publisher   reportPublisher
 	now         func() time.Time
+	randomIndex func(int) int
 	sendFor     time.Duration
 	persistFor  time.Duration
 }
@@ -66,6 +74,7 @@ func NewReporter(cfg ReportConfig) *Reporter {
 	require.NotNil("topic report users repository", cfg.Users)
 	require.NotNil("topic report publisher", cfg.Publisher)
 	require.NotNil("clock", cfg.Now)
+	require.NotNil("random index", cfg.RandomIndex)
 	sendFor := cfg.SendTimeout
 	if sendFor <= 0 {
 		sendFor = defaultReportSendTimeout
@@ -84,25 +93,40 @@ func NewReporter(cfg ReportConfig) *Reporter {
 		users:       cfg.Users,
 		publisher:   cfg.Publisher,
 		now:         cfg.Now,
+		randomIndex: cfg.RandomIndex,
 		sendFor:     sendFor,
 		persistFor:  persistFor,
 	}
 }
 
 func (r *Reporter) PublishDue(ctx context.Context, mainChatID int64, limit int) error {
+	var errs []error
 	due, err := r.challenges.ListUnsentTopicReports(ctx, mainChatID, limit)
 	if err != nil {
-		return err
+		errs = append(errs, err)
 	}
 	for _, challenge := range due {
-		if err := r.PublishOne(ctx, challenge); err != nil {
-			return err
+		if err := r.publishReport(ctx, challenge); err != nil {
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	due, err = r.challenges.ListUnsentTopicPolls(ctx, mainChatID, limit)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	for _, challenge := range due {
+		if err := r.publishPoll(ctx, challenge); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func (r *Reporter) PublishOne(ctx context.Context, challenge repository.Challenge) error {
+	return errors.Join(r.publishReport(ctx, challenge), r.publishPoll(ctx, challenge))
+}
+
+func (r *Reporter) publishReport(ctx context.Context, challenge repository.Challenge) error {
 	if challenge.State != repository.ChallengeStateFinished || challenge.TopicReportSentAt != nil {
 		return nil
 	}

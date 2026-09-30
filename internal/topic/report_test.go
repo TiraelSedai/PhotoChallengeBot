@@ -185,6 +185,7 @@ func newTestReporter(deps *topicReportDeps, now time.Time) *Reporter {
 		Suggestions: deps.suggestionsStore,
 		Users:       deps.users,
 		Publisher:   deps.publisher,
+		RandomIndex: func(int) int { return 0 },
 		Now: func() time.Time {
 			return now
 		},

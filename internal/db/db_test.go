@@ -97,6 +97,36 @@ func TestOpenConfiguresSQLiteAndAppliesMigrations(t *testing.T) {
 	}
 }
 
+func TestOpenPreservesSpecialCharactersInDatabasePath(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"bot#one.sqlite", "bot#two.sqlite", "bot?one.sqlite", "bot%23one.sqlite"} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(dir, name)
+			options := Options{Path: path, MigrationsDir: "../../migrations"}
+			database, err := Open(context.Background(), options)
+			if err != nil {
+				t.Fatal(err)
+			}
+			insertUser(t, database, 10)
+			if err := database.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(path); err != nil {
+				t.Fatalf("database not created at requested path: %v", err)
+			}
+			database, err = Open(context.Background(), options)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer database.Close()
+			var count int
+			if err := database.Get(&count, "SELECT COUNT(*) FROM users WHERE id = 10"); err != nil || count != 1 {
+				t.Fatalf("reopened database: count = %d, error = %v", count, err)
+			}
+		})
+	}
+}
+
 func TestTopicReportMigrationMarksExistingFinishedChallengesSent(t *testing.T) {
 	t.Parallel()
 

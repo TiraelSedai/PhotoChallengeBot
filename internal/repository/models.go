@@ -53,6 +53,8 @@ type Challenge struct {
 	AchievementsSentAt    *time.Time
 	TopicReportSendingAt  *time.Time
 	TopicReportSentAt     *time.Time
+	TopicPollSendingAt    *time.Time
+	TopicPollSentAt       *time.Time
 	CreatedByUserID       int64
 	CreatedAt             time.Time
 	UpdatedAt             time.Time

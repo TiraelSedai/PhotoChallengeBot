@@ -51,6 +51,9 @@ var _ telegramRunner = &MoqTelegramRunner{}
 //			SendPhotoFunc: func(context1 context.Context, n int64, s string, s1 string, inlineKeyboardMarkup *models.InlineKeyboardMarkup) (int, error) {
 //				panic("mock out the SendPhoto method")
 //			},
+//			SendPollFunc: func(context1 context.Context, n int64, s string, strings []string) (int, error) {
+//				panic("mock out the SendPoll method")
+//			},
 //			SendTextFunc: func(context1 context.Context, n int64, s string) (int, error) {
 //				panic("mock out the SendText method")
 //			},
@@ -96,6 +99,9 @@ type MoqTelegramRunner struct {
 
 	// SendPhotoFunc mocks the SendPhoto method.
 	SendPhotoFunc func(context1 context.Context, n int64, s string, s1 string, inlineKeyboardMarkup *models.InlineKeyboardMarkup) (int, error)
+
+	// SendPollFunc mocks the SendPoll method.
+	SendPollFunc func(context1 context.Context, n int64, s string, strings []string) (int, error)
 
 	// SendTextFunc mocks the SendText method.
 	SendTextFunc func(context1 context.Context, n int64, s string) (int, error)
@@ -204,6 +210,17 @@ type MoqTelegramRunner struct {
 			// InlineKeyboardMarkup is the inlineKeyboardMarkup argument value.
 			InlineKeyboardMarkup *models.InlineKeyboardMarkup
 		}
+		// SendPoll holds details about calls to the SendPoll method.
+		SendPoll []struct {
+			// Context1 is the context1 argument value.
+			Context1 context.Context
+			// N is the n argument value.
+			N int64
+			// S is the s argument value.
+			S string
+			// Strings is the strings argument value.
+			Strings []string
+		}
 		// SendText holds details about calls to the SendText method.
 		SendText []struct {
 			// Context1 is the context1 argument value.
@@ -238,6 +255,7 @@ type MoqTelegramRunner struct {
 	lockSendMarkdownPhoto      sync.RWMutex
 	lockSendMarkdownPhotoGroup sync.RWMutex
 	lockSendPhoto              sync.RWMutex
+	lockSendPoll               sync.RWMutex
 	lockSendText               sync.RWMutex
 	lockSendTextReply          sync.RWMutex
 	lockUsername               sync.RWMutex
@@ -687,6 +705,54 @@ func (mock *MoqTelegramRunner) SendPhotoCalls() []struct {
 	mock.lockSendPhoto.RLock()
 	calls = mock.calls.SendPhoto
 	mock.lockSendPhoto.RUnlock()
+	return calls
+}
+
+// SendPoll calls SendPollFunc.
+func (mock *MoqTelegramRunner) SendPoll(context1 context.Context, n int64, s string, strings []string) (int, error) {
+	callInfo := struct {
+		Context1 context.Context
+		N        int64
+		S        string
+		Strings  []string
+	}{
+		Context1: context1,
+		N:        n,
+		S:        s,
+		Strings:  strings,
+	}
+	mock.lockSendPoll.Lock()
+	mock.calls.SendPoll = append(mock.calls.SendPoll, callInfo)
+	mock.lockSendPoll.Unlock()
+	if mock.SendPollFunc == nil {
+		var (
+			n1  int
+			err error
+		)
+		return n1, err
+	}
+	return mock.SendPollFunc(context1, n, s, strings)
+}
+
+// SendPollCalls gets all the calls that were made to SendPoll.
+// Check the length with:
+//
+//	len(mockedtelegramRunner.SendPollCalls())
+func (mock *MoqTelegramRunner) SendPollCalls() []struct {
+	Context1 context.Context
+	N        int64
+	S        string
+	Strings  []string
+} {
+	var calls []struct {
+		Context1 context.Context
+		N        int64
+		S        string
+		Strings  []string
+	}
+	mock.lockSendPoll.RLock()
+	calls = mock.calls.SendPoll
+	mock.lockSendPoll.RUnlock()
 	return calls
 }
 

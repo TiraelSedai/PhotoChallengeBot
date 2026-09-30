@@ -15,6 +15,7 @@ type client interface {
 	GetMe(context.Context) (*models.User, error)
 	GetChatMember(context.Context, *tgbot.GetChatMemberParams) (*models.ChatMember, error)
 	SendMessage(context.Context, *tgbot.SendMessageParams) (*models.Message, error)
+	SendPoll(context.Context, *tgbot.SendPollParams) (*models.Message, error)
 	SendPhoto(context.Context, *tgbot.SendPhotoParams) (*models.Message, error)
 	SendMediaGroup(context.Context, *tgbot.SendMediaGroupParams) ([]*models.Message, error)
 	EditMessageMedia(context.Context, *tgbot.EditMessageMediaParams) (*models.Message, error)

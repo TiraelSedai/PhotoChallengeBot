@@ -19,6 +19,9 @@ var _ reportPublisher = &MoqReportPublisher{}
 //
 //		// make and configure a mocked reportPublisher
 //		mockedreportPublisher := &MoqReportPublisher{
+//			SendPollFunc: func(context1 context.Context, n int64, s string, strings []string) (int, error) {
+//				panic("mock out the SendPoll method")
+//			},
 //			SendTextFunc: func(context1 context.Context, n int64, s string) (int, error) {
 //				panic("mock out the SendText method")
 //			},
@@ -29,11 +32,25 @@ var _ reportPublisher = &MoqReportPublisher{}
 //
 //	}
 type MoqReportPublisher struct {
+	// SendPollFunc mocks the SendPoll method.
+	SendPollFunc func(context1 context.Context, n int64, s string, strings []string) (int, error)
+
 	// SendTextFunc mocks the SendText method.
 	SendTextFunc func(context1 context.Context, n int64, s string) (int, error)
 
 	// calls tracks calls to the methods.
 	calls struct {
+		// SendPoll holds details about calls to the SendPoll method.
+		SendPoll []struct {
+			// Context1 is the context1 argument value.
+			Context1 context.Context
+			// N is the n argument value.
+			N int64
+			// S is the s argument value.
+			S string
+			// Strings is the strings argument value.
+			Strings []string
+		}
 		// SendText holds details about calls to the SendText method.
 		SendText []struct {
 			// Context1 is the context1 argument value.
@@ -44,7 +61,56 @@ type MoqReportPublisher struct {
 			S string
 		}
 	}
+	lockSendPoll sync.RWMutex
 	lockSendText sync.RWMutex
+}
+
+// SendPoll calls SendPollFunc.
+func (mock *MoqReportPublisher) SendPoll(context1 context.Context, n int64, s string, strings []string) (int, error) {
+	callInfo := struct {
+		Context1 context.Context
+		N        int64
+		S        string
+		Strings  []string
+	}{
+		Context1: context1,
+		N:        n,
+		S:        s,
+		Strings:  strings,
+	}
+	mock.lockSendPoll.Lock()
+	mock.calls.SendPoll = append(mock.calls.SendPoll, callInfo)
+	mock.lockSendPoll.Unlock()
+	if mock.SendPollFunc == nil {
+		var (
+			n1  int
+			err error
+		)
+		return n1, err
+	}
+	return mock.SendPollFunc(context1, n, s, strings)
+}
+
+// SendPollCalls gets all the calls that were made to SendPoll.
+// Check the length with:
+//
+//	len(mockedreportPublisher.SendPollCalls())
+func (mock *MoqReportPublisher) SendPollCalls() []struct {
+	Context1 context.Context
+	N        int64
+	S        string
+	Strings  []string
+} {
+	var calls []struct {
+		Context1 context.Context
+		N        int64
+		S        string
+		Strings  []string
+	}
+	mock.lockSendPoll.RLock()
+	calls = mock.calls.SendPoll
+	mock.lockSendPoll.RUnlock()
+	return calls
 }
 
 // SendText calls SendTextFunc.

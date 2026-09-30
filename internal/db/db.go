@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/url"
 	"sync"
 
 	"github.com/jmoiron/sqlx"
@@ -35,7 +36,7 @@ func Open(ctx context.Context, opts Options) (*sqlx.DB, error) {
 	// has 2 GB of RAM and no swap.
 	dsn := fmt.Sprintf(
 		"file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(%d)&_pragma=foreign_keys(ON)&_pragma=cache_size(-20000)&_pragma=synchronous(NORMAL)",
-		opts.Path,
+		(&url.URL{Path: opts.Path}).EscapedPath(),
 		opts.BusyTimeout,
 	)
 	database, err := sqlx.Open("sqlite", dsn)

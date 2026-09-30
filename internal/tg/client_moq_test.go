@@ -46,6 +46,9 @@ var _ client = &MoqClient{}
 //			SendPhotoFunc: func(context1 context.Context, sendPhotoParams *bot.SendPhotoParams) (*models.Message, error) {
 //				panic("mock out the SendPhoto method")
 //			},
+//			SendPollFunc: func(context1 context.Context, sendPollParams *bot.SendPollParams) (*models.Message, error) {
+//				panic("mock out the SendPoll method")
+//			},
 //			StartFunc: func(context1 context.Context)  {
 //				panic("mock out the Start method")
 //			},
@@ -79,6 +82,9 @@ type MoqClient struct {
 
 	// SendPhotoFunc mocks the SendPhoto method.
 	SendPhotoFunc func(context1 context.Context, sendPhotoParams *bot.SendPhotoParams) (*models.Message, error)
+
+	// SendPollFunc mocks the SendPoll method.
+	SendPollFunc func(context1 context.Context, sendPollParams *bot.SendPollParams) (*models.Message, error)
 
 	// StartFunc mocks the Start method.
 	StartFunc func(context1 context.Context)
@@ -139,6 +145,13 @@ type MoqClient struct {
 			// SendPhotoParams is the sendPhotoParams argument value.
 			SendPhotoParams *bot.SendPhotoParams
 		}
+		// SendPoll holds details about calls to the SendPoll method.
+		SendPoll []struct {
+			// Context1 is the context1 argument value.
+			Context1 context.Context
+			// SendPollParams is the sendPollParams argument value.
+			SendPollParams *bot.SendPollParams
+		}
 		// Start holds details about calls to the Start method.
 		Start []struct {
 			// Context1 is the context1 argument value.
@@ -153,6 +166,7 @@ type MoqClient struct {
 	lockSendMediaGroup      sync.RWMutex
 	lockSendMessage         sync.RWMutex
 	lockSendPhoto           sync.RWMutex
+	lockSendPoll            sync.RWMutex
 	lockStart               sync.RWMutex
 }
 
@@ -469,6 +483,46 @@ func (mock *MoqClient) SendPhotoCalls() []struct {
 	mock.lockSendPhoto.RLock()
 	calls = mock.calls.SendPhoto
 	mock.lockSendPhoto.RUnlock()
+	return calls
+}
+
+// SendPoll calls SendPollFunc.
+func (mock *MoqClient) SendPoll(context1 context.Context, sendPollParams *bot.SendPollParams) (*models.Message, error) {
+	callInfo := struct {
+		Context1       context.Context
+		SendPollParams *bot.SendPollParams
+	}{
+		Context1:       context1,
+		SendPollParams: sendPollParams,
+	}
+	mock.lockSendPoll.Lock()
+	mock.calls.SendPoll = append(mock.calls.SendPoll, callInfo)
+	mock.lockSendPoll.Unlock()
+	if mock.SendPollFunc == nil {
+		var (
+			message *models.Message
+			err     error
+		)
+		return message, err
+	}
+	return mock.SendPollFunc(context1, sendPollParams)
+}
+
+// SendPollCalls gets all the calls that were made to SendPoll.
+// Check the length with:
+//
+//	len(mockedclient.SendPollCalls())
+func (mock *MoqClient) SendPollCalls() []struct {
+	Context1       context.Context
+	SendPollParams *bot.SendPollParams
+} {
+	var calls []struct {
+		Context1       context.Context
+		SendPollParams *bot.SendPollParams
+	}
+	mock.lockSendPoll.RLock()
+	calls = mock.calls.SendPoll
+	mock.lockSendPoll.RUnlock()
 	return calls
 }
 
