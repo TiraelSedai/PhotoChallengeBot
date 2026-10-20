@@ -18,6 +18,8 @@ const (
 	maxReportMessageLength   = 3500
 	maxReportHeaderLength    = 256
 	truncatedSuffix          = "..."
+	// The poll waits after the pinned results so it does not distract from the winners.
+	topicPollDelay = time.Hour
 )
 
 type reportChallenges interface {
@@ -25,7 +27,7 @@ type reportChallenges interface {
 	ClaimTopicReport(context.Context, int64, time.Time) (bool, error)
 	MarkTopicReportSent(context.Context, int64, time.Time, time.Time) (bool, error)
 	ReleaseTopicReportClaim(context.Context, int64, time.Time) error
-	ListUnsentTopicPolls(context.Context, int64, int) ([]repository.Challenge, error)
+	ListUnsentTopicPolls(context.Context, int64, time.Time, int) ([]repository.Challenge, error)
 	ClaimTopicPoll(context.Context, int64, time.Time) (bool, error)
 	MarkTopicPollSent(context.Context, int64, time.Time, time.Time) (bool, error)
 	ReleaseTopicPollClaim(context.Context, int64, time.Time) error
@@ -106,11 +108,11 @@ func (r *Reporter) PublishDue(ctx context.Context, mainChatID int64, limit int) 
 		errs = append(errs, err)
 	}
 	for _, challenge := range due {
-		if err := r.publishReport(ctx, challenge); err != nil {
+		if err := r.PublishReport(ctx, challenge); err != nil {
 			errs = append(errs, err)
 		}
 	}
-	due, err = r.challenges.ListUnsentTopicPolls(ctx, mainChatID, limit)
+	due, err = r.challenges.ListUnsentTopicPolls(ctx, mainChatID, r.now().Add(-topicPollDelay), limit)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -122,11 +124,9 @@ func (r *Reporter) PublishDue(ctx context.Context, mainChatID int64, limit int) 
 	return errors.Join(errs...)
 }
 
-func (r *Reporter) PublishOne(ctx context.Context, challenge repository.Challenge) error {
-	return errors.Join(r.publishReport(ctx, challenge), r.publishPoll(ctx, challenge))
-}
-
-func (r *Reporter) publishReport(ctx context.Context, challenge repository.Challenge) error {
+// PublishReport sends the admin report right after voting ends; the public poll is left to
+// PublishDue, which releases it topicPollDelay after the results are pinned.
+func (r *Reporter) PublishReport(ctx context.Context, challenge repository.Challenge) error {
 	if challenge.State != repository.ChallengeStateFinished || challenge.TopicReportSentAt != nil {
 		return nil
 	}

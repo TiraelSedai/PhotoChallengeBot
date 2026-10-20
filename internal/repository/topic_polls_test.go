@@ -27,13 +27,25 @@ func TestTopicPollPublicationClaims(t *testing.T) {
 	if _, err := database.Exec(`UPDATE challenges SET state = ?, finished_at = ? WHERE id = ?`, ChallengeStateFinished, timeString(claimedAt), id); err != nil {
 		t.Fatal(err)
 	}
+	if due, err := repo.ListUnsentTopicPolls(ctx, 0, claimedAt, 0); err != nil || len(due) != 0 {
+		t.Fatalf("list before results pinned = %v, %v, want empty", due, err)
+	}
+	if _, err := database.Exec(`UPDATE challenges SET results_pinned_at = ? WHERE id = ?`, timeString(claimedAt), id); err != nil {
+		t.Fatal(err)
+	}
 	for _, tc := range []struct {
-		chatID int64
-		want   int
-	}{{-1001, 1}, {-9999, 0}, {0, 1}} {
-		due, err := repo.ListUnsentTopicPolls(ctx, tc.chatID, 0)
+		chatID       int64
+		pinnedBefore time.Time
+		want         int
+	}{
+		{-1001, claimedAt, 1},
+		{-9999, claimedAt, 0},
+		{0, claimedAt, 1},
+		{-1001, claimedAt.Add(-time.Second), 0},
+	} {
+		due, err := repo.ListUnsentTopicPolls(ctx, tc.chatID, tc.pinnedBefore, 0)
 		if err != nil || len(due) != tc.want {
-			t.Fatalf("list for chat %d = %v, %v, want %d rows", tc.chatID, due, err, tc.want)
+			t.Fatalf("list for chat %d pinned before %s = %v, %v, want %d rows", tc.chatID, tc.pinnedBefore, due, err, tc.want)
 		}
 	}
 	// The admin report and public poll have independent publication claims.
@@ -80,7 +92,7 @@ func TestTopicPollPublicationClaims(t *testing.T) {
 	if claimed, err := repo.ClaimTopicPoll(ctx, id, sentAt.Add(time.Hour)); err != nil || claimed {
 		t.Fatalf("claim sent poll = %v, %v, want false, nil", claimed, err)
 	}
-	if due, err := repo.ListUnsentTopicPolls(ctx, -1001, 100); err != nil || len(due) != 0 {
+	if due, err := repo.ListUnsentTopicPolls(ctx, -1001, sentAt, 100); err != nil || len(due) != 0 {
 		t.Fatalf("list after sent = %v, %v, want empty", due, err)
 	}
 	if sent, err := repo.MarkTopicPollSent(ctx, id, time.Time{}, sentAt); err == nil || sent {
@@ -185,10 +197,10 @@ func TestTopicPollMigrationSkipsHistoryAndPreservesOpenChallenges(t *testing.T) 
 			t.Fatalf("open challenge changed: %+v", challenge)
 		}
 	}
-	if _, err := database.Exec(`UPDATE challenges SET state = ? WHERE state = ?`, ChallengeStateFinished, ChallengeStateVoting); err != nil {
+	if _, err := database.Exec(`UPDATE challenges SET state = ?, results_pinned_at = ? WHERE state = ?`, ChallengeStateFinished, timeString(testTime(0)), ChallengeStateVoting); err != nil {
 		t.Fatal(err)
 	}
-	if due, err := repo.ListUnsentTopicPolls(ctx, 0, 100); err != nil || len(due) != 1 || due[0].Num != 2 {
+	if due, err := repo.ListUnsentTopicPolls(ctx, 0, testTime(0), 100); err != nil || len(due) != 1 || due[0].Num != 2 {
 		t.Fatalf("pending polls after upgrade = %v, %v, want newly finished challenge 2", due, err)
 	}
 }

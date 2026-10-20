@@ -42,7 +42,7 @@ func TestReporterPublishesTopicPollFromCollectedSuggestions(t *testing.T) {
 			}
 			publisher := cfg.Publisher.(*MoqReportPublisher)
 			reporter := NewReporter(cfg)
-			if err := reporter.PublishOne(context.Background(), challenge); err != nil {
+			if err := reporter.PublishDue(context.Background(), challenge.MainChatID, 100); err != nil {
 				t.Fatal(err)
 			}
 			calls := publisher.SendPollCalls()
@@ -73,7 +73,7 @@ func TestReporterPublishesTopicPollFromCollectedSuggestions(t *testing.T) {
 			}
 			// A fresh reporter and stale challenge snapshot must not republish either phase.
 			reporter = NewReporter(cfg)
-			if err := reporter.PublishOne(context.Background(), challenge); err != nil {
+			if err := reporter.PublishReport(context.Background(), challenge); err != nil {
 				t.Fatal(err)
 			}
 			if err := reporter.PublishDue(context.Background(), challenge.MainChatID, 100); err != nil {
@@ -97,7 +97,7 @@ func TestReporterRetriesOnlyFailedTopicPublication(t *testing.T) {
 			} else {
 				publisher.SendTextFunc = func(context.Context, int64, string) (int, error) { return 0, wantErr }
 			}
-			if err := NewReporter(cfg).PublishOne(context.Background(), challenge); !errors.Is(err, wantErr) {
+			if err := NewReporter(cfg).PublishDue(context.Background(), challenge.MainChatID, 100); !errors.Is(err, wantErr) {
 				t.Fatalf("error = %v", err)
 			}
 			publisher.SendPollFunc = func(context.Context, int64, string, []string) (int, error) { return 1, nil }
@@ -120,7 +120,7 @@ func TestReporterRetriesOnlyFailedTopicPublication(t *testing.T) {
 
 func TestReporterNormalizesTopicPollOptions(t *testing.T) {
 	cfg, challenge := topicPollFixture(t, []int64{1, 2, 3, 4}, []string{"#ТЕМА \n осенний  лес", "#тема", "#тема " + strings.Repeat("я", 120), "#тема #тематический вечер"})
-	if err := NewReporter(cfg).PublishOne(context.Background(), challenge); err != nil {
+	if err := NewReporter(cfg).PublishDue(context.Background(), challenge.MainChatID, 100); err != nil {
 		t.Fatal(err)
 	}
 	options := cfg.Publisher.(*MoqReportPublisher).SendPollCalls()[0].Strings
@@ -146,7 +146,7 @@ func TestReporterRemovesOnlyStandaloneSuggestionHashtags(t *testing.T) {
 	} {
 		t.Run(tc.text, func(t *testing.T) {
 			cfg, challenge := topicPollFixture(t, []int64{1}, []string{tc.text})
-			if err := NewReporter(cfg).PublishOne(context.Background(), challenge); err != nil {
+			if err := NewReporter(cfg).PublishDue(context.Background(), challenge.MainChatID, 100); err != nil {
 				t.Fatal(err)
 			}
 			calls := cfg.Publisher.(*MoqReportPublisher).SendPollCalls()
@@ -186,7 +186,7 @@ func TestReporterCommitsPollAfterContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	cfg.Publisher.(*MoqReportPublisher).SendPollFunc = func(context.Context, int64, string, []string) (int, error) { cancel(); return 1, nil }
-	if err := NewReporter(cfg).PublishOne(ctx, challenge); err != nil {
+	if err := NewReporter(cfg).PublishDue(ctx, challenge.MainChatID, 100); err != nil {
 		t.Fatal(err)
 	}
 	if err := NewReporter(cfg).PublishDue(context.Background(), challenge.MainChatID, 100); err != nil {
@@ -194,6 +194,28 @@ func TestReporterCommitsPollAfterContextCancellation(t *testing.T) {
 	}
 	if len(cfg.Publisher.(*MoqReportPublisher).SendPollCalls()) != 1 {
 		t.Fatal("poll repeated after cancellation")
+	}
+}
+
+func TestReporterPublishesPollAnHourAfterResultsPinned(t *testing.T) {
+	cfg, challenge := topicPollFixture(t, []int64{1}, []string{"#тема лес"})
+	pinnedAt := *challenge.ResultsPinnedAt
+	now := pinnedAt.Add(topicPollDelay - time.Second)
+	cfg.Now = func() time.Time { return now }
+	reporter := NewReporter(cfg)
+	publisher := cfg.Publisher.(*MoqReportPublisher)
+	if err := reporter.PublishDue(context.Background(), challenge.MainChatID, 100); err != nil {
+		t.Fatal(err)
+	}
+	if polls, reports := len(publisher.SendPollCalls()), len(publisher.SendTextCalls()); polls != 0 || reports != 1 {
+		t.Fatalf("before delay: poll calls = %d, report calls = %d, want 0 and 1", polls, reports)
+	}
+	now = pinnedAt.Add(topicPollDelay)
+	if err := reporter.PublishDue(context.Background(), challenge.MainChatID, 100); err != nil {
+		t.Fatal(err)
+	}
+	if polls := len(publisher.SendPollCalls()); polls != 1 {
+		t.Fatalf("after delay: poll calls = %d, want 1", polls)
 	}
 }
 
@@ -236,12 +258,22 @@ func topicPollFixture(t *testing.T, authors []int64, texts []string) (ReportConf
 			t.Fatal(err)
 		}
 	}
-	if changed, err := challenges.FinishVotingNow(ctx, challenge.ID, now.Add(time.Hour)); err != nil || !changed {
+	finishedAt := now.Add(time.Hour)
+	if changed, err := challenges.FinishVotingNow(ctx, challenge.ID, finishedAt); err != nil || !changed {
 		t.Fatalf("finish voting: %v, %v", changed, err)
+	}
+	if claimed, err := challenges.ClaimResults(ctx, challenge.ID, finishedAt); err != nil || !claimed {
+		t.Fatalf("claim results: %v, %v", claimed, err)
+	}
+	if set, err := challenges.SetResultsMessageID(ctx, challenge.ID, 500, finishedAt, finishedAt); err != nil || !set {
+		t.Fatalf("set results message: %v, %v", set, err)
+	}
+	if pinned, err := challenges.MarkResultsPinned(ctx, challenge.ID, finishedAt, finishedAt); err != nil || !pinned {
+		t.Fatalf("pin results: %v, %v", pinned, err)
 	}
 	challenge, err = challenges.Get(ctx, challenge.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return ReportConfig{AdminChatID: -2002, Challenges: challenges, Suggestions: suggestions, Users: users, Publisher: &MoqReportPublisher{}, Now: func() time.Time { return now.Add(time.Hour) }, RandomIndex: func(int) int { return 0 }}, challenge
+	return ReportConfig{AdminChatID: -2002, Challenges: challenges, Suggestions: suggestions, Users: users, Publisher: &MoqReportPublisher{}, Now: func() time.Time { return finishedAt.Add(topicPollDelay) }, RandomIndex: func(int) int { return 0 }}, challenge
 }

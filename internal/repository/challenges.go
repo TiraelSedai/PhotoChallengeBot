@@ -815,7 +815,9 @@ func (r *Challenges) ReleaseTopicReportClaim(ctx context.Context, id int64, clai
 	return nil
 }
 
-func (r *Challenges) ListUnsentTopicPolls(ctx context.Context, mainChatID int64, limit int) ([]Challenge, error) {
+// ListUnsentTopicPolls returns finished challenges whose results were pinned no later than
+// resultsPinnedBefore, so the poll follows the winners announcement instead of competing with it.
+func (r *Challenges) ListUnsentTopicPolls(ctx context.Context, mainChatID int64, resultsPinnedBefore time.Time, limit int) ([]Challenge, error) {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -823,10 +825,12 @@ func (r *Challenges) ListUnsentTopicPolls(ctx context.Context, mainChatID int64,
 	if err := r.db.SelectContext(ctx, &rows, challengeSelectSQL+`
 		WHERE state = ?
 			AND topic_poll_sent_at IS NULL
+			AND results_pinned_at IS NOT NULL
+			AND julianday(results_pinned_at) <= julianday(?)
 			AND (? = 0 OR main_chat_id = ?)
 		ORDER BY finished_at ASC, id ASC
 		LIMIT ?
-	`, ChallengeStateFinished, mainChatID, mainChatID, limit); err != nil {
+	`, ChallengeStateFinished, timeString(resultsPinnedBefore), mainChatID, mainChatID, limit); err != nil {
 		return nil, fmt.Errorf("list unsent topic polls: %w", err)
 	}
 	return challengeRows(rows)

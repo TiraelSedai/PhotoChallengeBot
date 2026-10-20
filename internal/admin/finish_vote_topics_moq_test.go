@@ -21,8 +21,8 @@ var _ finishVoteTopics = &MoqFinishVoteTopics{}
 //
 //		// make and configure a mocked finishVoteTopics
 //		mockedfinishVoteTopics := &MoqFinishVoteTopics{
-//			PublishOneFunc: func(context1 context.Context, challenge repository.Challenge) error {
-//				panic("mock out the PublishOne method")
+//			PublishReportFunc: func(context1 context.Context, challenge repository.Challenge) error {
+//				panic("mock out the PublishReport method")
 //			},
 //		}
 //
@@ -31,24 +31,24 @@ var _ finishVoteTopics = &MoqFinishVoteTopics{}
 //
 //	}
 type MoqFinishVoteTopics struct {
-	// PublishOneFunc mocks the PublishOne method.
-	PublishOneFunc func(context1 context.Context, challenge repository.Challenge) error
+	// PublishReportFunc mocks the PublishReport method.
+	PublishReportFunc func(context1 context.Context, challenge repository.Challenge) error
 
 	// calls tracks calls to the methods.
 	calls struct {
-		// PublishOne holds details about calls to the PublishOne method.
-		PublishOne []struct {
+		// PublishReport holds details about calls to the PublishReport method.
+		PublishReport []struct {
 			// Context1 is the context1 argument value.
 			Context1 context.Context
 			// Challenge is the challenge argument value.
 			Challenge repository.Challenge
 		}
 	}
-	lockPublishOne sync.RWMutex
+	lockPublishReport sync.RWMutex
 }
 
-// PublishOne calls PublishOneFunc.
-func (mock *MoqFinishVoteTopics) PublishOne(context1 context.Context, challenge repository.Challenge) error {
+// PublishReport calls PublishReportFunc.
+func (mock *MoqFinishVoteTopics) PublishReport(context1 context.Context, challenge repository.Challenge) error {
 	callInfo := struct {
 		Context1  context.Context
 		Challenge repository.Challenge
@@ -56,23 +56,23 @@ func (mock *MoqFinishVoteTopics) PublishOne(context1 context.Context, challenge 
 		Context1:  context1,
 		Challenge: challenge,
 	}
-	mock.lockPublishOne.Lock()
-	mock.calls.PublishOne = append(mock.calls.PublishOne, callInfo)
-	mock.lockPublishOne.Unlock()
-	if mock.PublishOneFunc == nil {
+	mock.lockPublishReport.Lock()
+	mock.calls.PublishReport = append(mock.calls.PublishReport, callInfo)
+	mock.lockPublishReport.Unlock()
+	if mock.PublishReportFunc == nil {
 		var (
 			err error
 		)
 		return err
 	}
-	return mock.PublishOneFunc(context1, challenge)
+	return mock.PublishReportFunc(context1, challenge)
 }
 
-// PublishOneCalls gets all the calls that were made to PublishOne.
+// PublishReportCalls gets all the calls that were made to PublishReport.
 // Check the length with:
 //
-//	len(mockedfinishVoteTopics.PublishOneCalls())
-func (mock *MoqFinishVoteTopics) PublishOneCalls() []struct {
+//	len(mockedfinishVoteTopics.PublishReportCalls())
+func (mock *MoqFinishVoteTopics) PublishReportCalls() []struct {
 	Context1  context.Context
 	Challenge repository.Challenge
 } {
@@ -80,8 +80,8 @@ func (mock *MoqFinishVoteTopics) PublishOneCalls() []struct {
 		Context1  context.Context
 		Challenge repository.Challenge
 	}
-	mock.lockPublishOne.RLock()
-	calls = mock.calls.PublishOne
-	mock.lockPublishOne.RUnlock()
+	mock.lockPublishReport.RLock()
+	calls = mock.calls.PublishReport
+	mock.lockPublishReport.RUnlock()
 	return calls
 }

@@ -49,9 +49,9 @@ func TestFinishVoteHandlerFinishesVotingAndPublishesResults(t *testing.T) {
 	if len(publishCalls) != 1 || publishCalls[0].N != 42 {
 		t.Fatalf("PublishOne calls = %#v, want challenge 42", publishCalls)
 	}
-	topicCalls := topics.PublishOneCalls()
+	topicCalls := topics.PublishReportCalls()
 	if len(topicCalls) != 1 || topicCalls[0].Challenge.ID != 42 || topicCalls[0].Challenge.State != repository.ChallengeStateFinished {
-		t.Fatalf("topic PublishOne calls = %#v, want finished challenge 42", topicCalls)
+		t.Fatalf("topic PublishReport calls = %#v, want finished challenge 42", topicCalls)
 	}
 	if got := publisher.SendTextCalls()[0].S; got != finishVoteDoneMessage {
 		t.Fatalf("sent = %q, want done message", got)
@@ -204,7 +204,7 @@ func TestFinishVoteHandlerReportsTopicFailureAndStillPublishesResults(t *testing
 	}
 	publisher := &MoqFinishVotePublisher{}
 	results := &MoqFinishVoteResults{}
-	topics := &MoqFinishVoteTopics{PublishOneFunc: func(context.Context, repository.Challenge) error {
+	topics := &MoqFinishVoteTopics{PublishReportFunc: func(context.Context, repository.Challenge) error {
 		return wantErr
 	}}
 	handler := NewFinishVoteHandler(FinishVoteConfig{

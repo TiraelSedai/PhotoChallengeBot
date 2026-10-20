@@ -24,8 +24,8 @@ func TestReporterPublishesSuggestionsToAdmin(t *testing.T) {
 	deps.usersByID[12] = repository.User{ID: 12, DisplayName: "Bob Example"}
 	reporter := newTestReporter(deps, now)
 
-	if err := reporter.PublishOne(context.Background(), challenge); err != nil {
-		t.Fatalf("PublishOne() error = %v", err)
+	if err := reporter.PublishReport(context.Background(), challenge); err != nil {
+		t.Fatalf("PublishReport() error = %v", err)
 	}
 
 	if len(deps.messages) != 1 {
@@ -69,8 +69,8 @@ func TestReporterPublishesEmptySuggestionReport(t *testing.T) {
 	deps := newTopicReportDeps(challenge)
 	reporter := newTestReporter(deps, now)
 
-	if err := reporter.PublishOne(context.Background(), challenge); err != nil {
-		t.Fatalf("PublishOne() error = %v", err)
+	if err := reporter.PublishReport(context.Background(), challenge); err != nil {
+		t.Fatalf("PublishReport() error = %v", err)
 	}
 
 	want := []string{"Темы, предложенные во время голосования за челлендж #0:\n\nТем за время голосования не предложили."}
@@ -98,8 +98,8 @@ func TestReporterSplitsLongSuggestionReport(t *testing.T) {
 	}
 	reporter := newTestReporter(deps, now)
 
-	if err := reporter.PublishOne(context.Background(), challenge); err != nil {
-		t.Fatalf("PublishOne() error = %v", err)
+	if err := reporter.PublishReport(context.Background(), challenge); err != nil {
+		t.Fatalf("PublishReport() error = %v", err)
 	}
 
 	if len(deps.messages) < 2 {
@@ -128,8 +128,8 @@ func TestReporterMarksSentAfterParentCancellation(t *testing.T) {
 	deps.afterSend = cancel
 	reporter := newTestReporter(deps, now)
 
-	if err := reporter.PublishOne(ctx, challenge); err != nil {
-		t.Fatalf("PublishOne() error = %v", err)
+	if err := reporter.PublishReport(ctx, challenge); err != nil {
+		t.Fatalf("PublishReport() error = %v", err)
 	}
 	if deps.sentChallengeID != challenge.ID {
 		t.Fatalf("sentChallengeID = %d, want %d", deps.sentChallengeID, challenge.ID)
@@ -145,9 +145,9 @@ func TestReporterReleasesClaimWhenSendFails(t *testing.T) {
 	deps.publishErr = wantErr
 	reporter := newTestReporter(deps, now)
 
-	err := reporter.PublishOne(context.Background(), challenge)
+	err := reporter.PublishReport(context.Background(), challenge)
 	if !errors.Is(err, wantErr) {
-		t.Fatalf("PublishOne() error = %v, want %v", err, wantErr)
+		t.Fatalf("PublishReport() error = %v, want %v", err, wantErr)
 	}
 	if deps.releasedChallengeID != challenge.ID {
 		t.Fatalf("releasedChallengeID = %d, want %d", deps.releasedChallengeID, challenge.ID)
@@ -169,9 +169,9 @@ func TestReporterReleasesClaimAfterParentCancellation(t *testing.T) {
 	deps.beforeError = cancel
 	reporter := newTestReporter(deps, now)
 
-	err := reporter.PublishOne(ctx, challenge)
+	err := reporter.PublishReport(ctx, challenge)
 	if !errors.Is(err, wantErr) {
-		t.Fatalf("PublishOne() error = %v, want %v", err, wantErr)
+		t.Fatalf("PublishReport() error = %v, want %v", err, wantErr)
 	}
 	if deps.releasedChallengeID != challenge.ID {
 		t.Fatalf("releasedChallengeID = %d, want %d", deps.releasedChallengeID, challenge.ID)
